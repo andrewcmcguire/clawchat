@@ -7,6 +7,11 @@ ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS owner_email TEXT;
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free';
 ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}';
 
+-- Alter channels for project fields
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS project_type TEXT DEFAULT 'project';
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS skills_context TEXT;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+
 -- Workspace members (org-based)
 CREATE TABLE IF NOT EXISTS workspace_members (
   id SERIAL PRIMARY KEY,
