@@ -207,6 +207,6 @@ CREATE TABLE IF NOT EXISTS assistant_actions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Seed data
+-- Seed data (basic — runs before migration, so only use base columns)
 INSERT INTO workspaces (id, name) VALUES ('default', 'SteadyChat') ON CONFLICT DO NOTHING;
-INSERT INTO channels (id, workspace_id, name, description, project_type) VALUES ('general', 'default', 'General', 'General workspace', 'project') ON CONFLICT DO NOTHING;
+INSERT INTO channels (id, workspace_id, name, description) VALUES ('general', 'default', 'General', 'General workspace') ON CONFLICT DO NOTHING;
