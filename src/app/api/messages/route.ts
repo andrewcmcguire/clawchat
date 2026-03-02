@@ -5,8 +5,13 @@ import { agents } from "@/lib/agents";
 import { broadcast } from "@/lib/sse";
 import { routeToLLM } from "@/lib/llm-router";
 import Anthropic from "@anthropic-ai/sdk";
+import { execFile } from "child_process";
+import { promisify } from "util";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const execFileAsync = promisify(execFile);
+
+// Anthropic client kept for workers and non-Drew routes
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || "not-set" });
 
 const RECENT_MESSAGE_LIMIT = 50;
 const SUMMARY_THRESHOLD = 50;
@@ -127,16 +132,29 @@ async function summarizeAndStore(channelId: string): Promise<string | null> {
       ? `Here is the previous conversation summary:\n${existingSummary}\n\nHere are new messages since then:\n${conversationText}\n\nUpdate the summary to include the new information. Keep it concise (max 500 words). Focus on key decisions, action items, important context, and user preferences.`
       : `Summarize this conversation for future context. Keep it concise (max 500 words). Focus on key decisions, action items, important context, and user preferences.\n\n${conversationText}`;
 
-    const summaryResponse = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      system: "You are a conversation summarizer. Create concise, factual summaries that preserve important context, decisions, and action items.",
-      messages: [{ role: "user", content: summaryPrompt }],
-    });
-
+    // Use CLI for summarization (same as Drew — no API key needed)
     let summary = "";
-    for (const block of summaryResponse.content) {
-      if (block.type === "text") summary = block.text;
+    try {
+      const { stdout } = await execFileAsync("claude", [
+        "-p", summaryPrompt,
+        "--system-prompt", "You are a conversation summarizer. Create concise, factual summaries that preserve important context, decisions, and action items.",
+        "--output-format", "json",
+        "--model", "sonnet",
+      ], { timeout: 30000, maxBuffer: 1024 * 1024 });
+
+      const result = JSON.parse(stdout);
+      summary = result.result || result.text || stdout;
+    } catch {
+      // Backup-backup: try Anthropic API if CLI fails
+      const summaryResponse = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        system: "You are a conversation summarizer. Create concise, factual summaries that preserve important context, decisions, and action items.",
+        messages: [{ role: "user", content: summaryPrompt }],
+      });
+      for (const block of summaryResponse.content) {
+        if (block.type === "text") summary = block.text;
+      }
     }
 
     if (summary) {

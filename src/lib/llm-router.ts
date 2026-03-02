@@ -56,7 +56,7 @@ async function loadProviderConfig(projectId?: string): Promise<ProviderConfig> {
   return config;
 }
 
-// Drew (brain) → Opus with extended thinking
+// Drew (brain) → Claude CLI (OAuth, primary) → Opus API fallback
 // Workers → configurable: LM Studio → fallback provider (Sonnet/Google/OpenAI)
 export async function routeToLLM(
   agentId: string,
@@ -68,19 +68,8 @@ export async function routeToLLM(
   const config = await loadProviderConfig(projectId);
 
   if (agentId === "drew") {
-    try {
-      return await callClaudeOpus(systemPrompt, messages, anthropic);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("Opus failed, trying fallback:", msg);
-      // If API key is bad, try Sonnet then CLI
-      try {
-        return await callClaudeSonnet(systemPrompt, messages, anthropic);
-      } catch {
-        console.error("Sonnet also failed, trying CLI...");
-        return await callClaudeCLI(systemPrompt, messages);
-      }
-    }
+    // Drew uses Claude CLI/SDK (OAuth) — no API key needed
+    return callClaudeCLI(systemPrompt, messages);
   }
 
   // Workers: try LM Studio first
