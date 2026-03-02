@@ -584,6 +584,36 @@ export default function Home() {
       if (res.ok) setProjectFiles(await res.json());
     } catch {}
   }, []);
+  // Inbox tasks loading (cross-project)
+  const loadInboxTasks = useCallback(async () => {
+    try {
+      const res = await fetch("/api/tasks/all");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setInboxTasks(data);
+      }
+    } catch { setInboxTasks([]); }
+  }, []);
+
+  // Activity feed (all)
+  const loadActivityAll = useCallback(async () => {
+    try {
+      const res = await fetch("/api/office/activity");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setActivityFeedAll(data);
+      }
+    } catch { setActivityFeedAll([]); }
+  }, []);
+
+  // Finance data
+  const loadFinanceData = useCallback(async () => {
+    try {
+      const res = await fetch("/api/finance");
+      if (res.ok) setFinanceData(await res.json());
+    } catch { setFinanceData(null); }
+  }, []);
+
   // Invite user
   async function handleInviteUser() {
     if (!inviteForm.name.trim() || !inviteForm.email.trim()) return;
@@ -661,7 +691,10 @@ export default function Home() {
     if (viewMode === "calendar") loadCalendarEvents(calendarWeekStart);
     if (viewMode === "admin") { loadAdminUsers(); if (adminTab === "audit") loadAdminAudit(); if (adminTab === "usage") loadAdminUsage(); if (adminTab === "system") loadAdminSystem(); }
     if (viewMode === "files") loadFiles();
-  }, [viewMode, loadOfficeMetrics, loadActivityFeed, loadDashboard, loadContacts, loadCalendarEvents, loadMemory, officeTab, contactSearch, calendarWeekStart, loadAdminUsers, loadAdminAudit, loadAdminUsage, loadAdminSystem, adminTab, loadFiles]);
+    if (viewMode === "inbox") loadInboxTasks();
+    if (viewMode === "activity") loadActivityAll();
+    if (viewMode === "finance") loadFinanceData();
+  }, [viewMode, loadOfficeMetrics, loadActivityFeed, loadDashboard, loadContacts, loadCalendarEvents, loadMemory, officeTab, contactSearch, calendarWeekStart, loadAdminUsers, loadAdminAudit, loadAdminUsage, loadAdminSystem, adminTab, loadFiles, loadInboxTasks, loadActivityAll, loadFinanceData]);
 
   // Request notification permission on mount
   useEffect(() => {
@@ -1743,23 +1776,23 @@ export default function Home() {
               <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div className="rounded-xl border border-border bg-surface/50 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">LLM Costs</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">$0.00</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">${((dashboardData?.summary as any)?.llmCostToday || 0).toFixed(2)}</p>
                   <p className="text-[11px] text-muted">today</p>
                 </div>
                 <div className="rounded-xl border border-border bg-surface/50 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Projects</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">{projects.filter(p => !p.is_dm).length}</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{(dashboardData?.summary as any)?.projectCount || projects.filter(p => !p.is_dm).length}</p>
                   <p className="text-[11px] text-muted">active</p>
                 </div>
                 <div className="rounded-xl border border-border bg-surface/50 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Workers</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">0</p>
-                  <p className="text-[11px] text-muted">running</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Tasks</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{dashboardData?.summary?.taskCount || 0}</p>
+                  <p className="text-[11px] text-muted">in progress</p>
                 </div>
                 <div className="rounded-xl border border-border bg-surface/50 p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Due</p>
-                  <p className="mt-1 text-2xl font-bold text-foreground">{dashboardData?.summary?.taskCount || 0}</p>
-                  <p className="text-[11px] text-muted">tasks today</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{(dashboardData?.summary as any)?.dueTodayCount || 0}</p>
+                  <p className="text-[11px] text-muted">today</p>
                 </div>
               </div>
 

@@ -1,16 +1,14 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "io.steadybase.steadychat",
-  appName: "SteadyChat",
+  appId: "io.steadybase.app",
+  appName: "Steadybase",
   server: {
-    // Remote server mode — app loads from your server URL
-    // Change to your domain when DNS is ready (e.g., https://chat.steadybase.io)
-    url: "http://44.254.64.158",
-    cleartext: true,
+    url: "https://app.steadybase.io",
+    cleartext: false,
   },
   ios: {
-    scheme: "SteadyChat",
+    scheme: "Steadybase",
     contentInset: "always",
   },
 };

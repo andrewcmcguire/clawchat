@@ -51,6 +51,45 @@ export async function GET() {
        ORDER BY aa.created_at DESC`
     );
 
+    // LLM cost tracking (today)
+    let llmCostToday = 0;
+    try {
+      const costResult = await pool.query(
+        `SELECT COALESCE(SUM(tokens_used), 0) as total_tokens, model
+         FROM usage_log WHERE workspace_id = 'default' AND created_at::date = CURRENT_DATE
+         GROUP BY model`
+      );
+      for (const row of costResult.rows) {
+        const tokens = parseInt(row.total_tokens) || 0;
+        const model = (row.model || "").toLowerCase();
+        let costPer1k = 0.003; // default
+        if (model.includes("opus")) costPer1k = 0.075;
+        else if (model.includes("sonnet")) costPer1k = 0.015;
+        else if (model.includes("haiku")) costPer1k = 0.001;
+        else if (model.includes("gpt-4")) costPer1k = 0.03;
+        llmCostToday += (tokens / 1000) * costPer1k;
+      }
+    } catch { /* usage_log may not exist */ }
+
+    // Project count
+    let projectCount = 0;
+    try {
+      const projResult = await pool.query(
+        `SELECT COUNT(*) as count FROM channels WHERE workspace_id = 'default' AND (is_dm IS NULL OR is_dm = false)`
+      );
+      projectCount = parseInt(projResult.rows[0]?.count) || 0;
+    } catch { /* channels table issue */ }
+
+    // Due today count
+    let dueTodayCount = 0;
+    try {
+      const dueResult = await pool.query(
+        `SELECT COUNT(*) as count FROM project_tasks
+         WHERE status != 'done' AND due_date::date = CURRENT_DATE`
+      );
+      dueTodayCount = parseInt(dueResult.rows[0]?.count) || 0;
+    } catch { /* no due date data */ }
+
     const events = eventsResult.rows;
     const tasks = tasksResult.rows;
     const followUps = followUpsResult.rows;
@@ -67,6 +106,9 @@ export async function GET() {
         taskCount: tasks.length,
         followUpCount: followUps.length,
         pendingActionCount: pendingActions.length,
+        llmCostToday,
+        projectCount,
+        dueTodayCount,
       },
     });
   } catch (err) {
