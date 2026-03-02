@@ -1,11 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import pool from "@/lib/db";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 // Defaults from env — can be overridden by settings
 const DEFAULT_LM_STUDIO_URL = process.env.LM_STUDIO_URL || "http://localhost:1234/v1";
 const LM_STUDIO_TIMEOUT = parseInt(process.env.LM_STUDIO_TIMEOUT || "15000", 10);
 
-export type LLMProvider = "claude-opus" | "claude-sonnet" | "lmstudio" | "google" | "openai";
+export type LLMProvider = "claude-cli" | "claude-opus" | "claude-sonnet" | "lmstudio" | "google" | "openai";
 
 export interface LLMResponse {
   text: string;
@@ -64,7 +68,8 @@ export async function routeToLLM(
   const config = await loadProviderConfig(projectId);
 
   if (agentId === "drew") {
-    return callClaudeOpus(systemPrompt, messages, anthropic);
+    // Use Claude CLI with OAuth — no API key needed
+    return callClaudeCLI(systemPrompt, messages);
   }
 
   // Workers: try LM Studio first
@@ -96,6 +101,8 @@ export async function callProvider(
   const config = await loadProviderConfig(projectId);
 
   switch (provider) {
+    case "claude-cli":
+      return callClaudeCLI(systemPrompt, messages);
     case "claude-opus":
       return callClaudeOpus(systemPrompt, messages, anthropic);
     case "claude-sonnet":
@@ -231,6 +238,62 @@ async function callGoogle(
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
   return { text, reasoning: "", provider: "google" };
+}
+
+// Claude CLI — uses OAuth (user's Claude account), no API key
+async function callClaudeCLI(
+  systemPrompt: string,
+  messages: Anthropic.MessageParam[]
+): Promise<LLMResponse> {
+  // Build the full prompt with conversation history
+  const historyLines: string[] = [];
+  for (const msg of messages) {
+    const role = msg.role === "user" ? "User" : "Drew";
+    const text = typeof msg.content === "string" ? msg.content : "";
+    historyLines.push(`${role}: ${text}`);
+  }
+
+  // The last message is the current user message
+  // Format: system prompt + history context for Claude CLI
+  const fullPrompt = historyLines.length > 1
+    ? `Previous conversation:\n${historyLines.slice(0, -1).join("\n")}\n\nCurrent message:\n${historyLines[historyLines.length - 1]}`
+    : historyLines[historyLines.length - 1] || "";
+
+  try {
+    const { stdout } = await execFileAsync("claude", [
+      "-p", fullPrompt,
+      "--system-prompt", systemPrompt,
+      "--output-format", "json",
+      "--model", "opus",
+    ], {
+      timeout: 120_000, // 2 minute timeout
+      maxBuffer: 10 * 1024 * 1024, // 10MB
+      env: {
+        ...process.env,
+        CLAUDECODE: undefined, // Allow nested CLI calls
+      },
+    });
+
+    const result = JSON.parse(stdout);
+
+    if (result.is_error) {
+      throw new Error(result.result || "Claude CLI returned an error");
+    }
+
+    return {
+      text: result.result || "",
+      reasoning: `[Claude CLI] Cost: $${result.cost_usd?.toFixed(4) || "0"} | ${result.duration_ms || 0}ms`,
+      provider: "claude-cli",
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("[Claude CLI] Error:", message);
+
+    // Fallback to API if CLI fails
+    console.log("[Claude CLI] Falling back to Anthropic API...");
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    return callClaudeOpus(systemPrompt, messages, anthropic);
+  }
 }
 
 async function callOpenAI(

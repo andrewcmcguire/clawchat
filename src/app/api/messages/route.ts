@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { auth } from "@/auth";
 import { agents } from "@/lib/agents";
 import { broadcast } from "@/lib/sse";
 import { routeToLLM } from "@/lib/llm-router";
@@ -84,8 +85,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
   const body = await req.json();
-  const { content, channel_id = "general", sender = "You" } = body;
+  const { content, channel_id = "general" } = body;
+  const sender = session?.user?.name || "You";
 
   if (!content || typeof content !== "string") {
     return NextResponse.json({ error: "content is required" }, { status: 400 });

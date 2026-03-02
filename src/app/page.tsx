@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, lazy, Suspense } from "react";
+import { useSession, signOut } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import data from "@emoji-mart/data";
+import Picker from "@emoji-mart/react";
 
 // ─── Types ───────────────────────────────────────────────────────────
 interface Message {
@@ -28,6 +31,9 @@ interface Project {
   description?: string;
   project_type?: string;
   status?: string;
+  is_dm?: boolean;
+  dm_user1?: string;
+  dm_user2?: string;
 }
 
 interface Skill {
@@ -56,7 +62,7 @@ interface ProjectTask {
   updated_at: string;
 }
 
-type ViewMode = "dashboard" | "chat" | "board" | "settings" | "office" | "lab" | "contacts" | "calendar";
+type ViewMode = "dashboard" | "chat" | "board" | "settings" | "office" | "lab" | "contacts" | "calendar" | "files" | "admin";
 
 interface Contact { id: number; name: string; email: string | null; phone: string | null; company: string | null; role: string | null; linkedin_url: string | null; channels: Record<string, boolean>; notes: string | null; last_contacted_at: string | null; }
 interface ContactInteraction { id: number; type: string; summary: string; transcript_id: number | null; initiated_by: string; created_at: string; }
@@ -176,6 +182,7 @@ function relativeTime(dateStr: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────
 export default function Home() {
+  const { data: session } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [input, setInput] = useState("");
@@ -294,6 +301,38 @@ export default function Home() {
   // Project editing
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [editProjectName, setEditProjectName] = useState("");
+  // Admin state
+  const [adminTab, setAdminTab] = useState<"users" | "workspaces" | "usage" | "audit" | "system">("users");
+  const [adminUsers, setAdminUsers] = useState<{ id: number; email: string; name: string; role: string; status: string; is_admin: boolean; auth_provider: string; last_login_at: string | null; created_at: string }[]>([]);
+  const [adminAudit, setAdminAudit] = useState<{ entries: { id: number; user_email: string; action: string; resource_type: string; resource_id: string | null; details: Record<string, unknown>; created_at: string }[]; total: number; page: number; totalPages: number }>({ entries: [], total: 0, page: 1, totalPages: 0 });
+  const [adminUsage, setAdminUsage] = useState<{ totals24h: { usage_type: string; total: string }[]; daily: { day: string; usage_type: string; total: string }[]; byUser: { user_email: string; usage_type: string; total: string }[]; byModel: { model: string; total: string }[] } | null>(null);
+  const [adminSystem, setAdminSystem] = useState<{ tableCounts: Record<string, number>; pool: Record<string, number>; server: { nodeVersion: string; uptime: number; memoryUsage: { heapUsed: number; heapTotal: number }; platform: string } } | null>(null);
+  const [inviteForm, setInviteForm] = useState({ name: "", email: "", role: "member" });
+  const [inviteResult, setInviteResult] = useState<{ email: string; temporaryPassword: string } | null>(null);
+  // Files state
+  const [projectFiles, setProjectFiles] = useState<{ id: number; channel_id: string; name: string; file_type: string; file_size: number; s3_key: string | null; uploaded_by: string | null; project_name: string; created_at: string }[]>([]);
+  // Mobile state
+  const [moreSheetOpen, setMoreSheetOpen] = useState(false);
+  const [brainOverlayOpen, setBrainOverlayOpen] = useState(false);
+  // Emoji picker
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  // Audio note recording
+  const [recordingAudioNote, setRecordingAudioNote] = useState(false);
+  const [audioNoteBlob, setAudioNoteBlob] = useState<Blob | null>(null);
+  const audioNoteRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioNoteChunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [dragOverFiles, setDragOverFiles] = useState(false);
+  // Password change
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: "", new: "", confirm: "" });
+  const [passwordChanging, setPasswordChanging] = useState(false);
+  // DM state
+  const [dmUsers, setDmUsers] = useState<{ id: number; email: string; name: string }[]>([]);
+  const [showNewDM, setShowNewDM] = useState(false);
+  // Presence
+  const [onlineUsers, setOnlineUsers] = useState<{ email: string; name: string }[]>([]);
 
   // Close sidebar on mobile when navigating
   function navTo(mode: ViewMode) {
@@ -481,6 +520,89 @@ export default function Home() {
     finally { setPreppingEventId(null); }
   }
 
+  // Admin data loading
+  const loadAdminUsers = useCallback(async () => {
+    try { const res = await fetch("/api/admin/users"); if (res.ok) setAdminUsers(await res.json()); } catch {}
+  }, []);
+  const loadAdminAudit = useCallback(async (page = 1) => {
+    try { const res = await fetch(`/api/admin/audit?page=${page}`); if (res.ok) setAdminAudit(await res.json()); } catch {}
+  }, []);
+  const loadAdminUsage = useCallback(async () => {
+    try { const res = await fetch("/api/admin/usage"); if (res.ok) setAdminUsage(await res.json()); } catch {}
+  }, []);
+  const loadAdminSystem = useCallback(async () => {
+    try { const res = await fetch("/api/admin/system"); if (res.ok) setAdminSystem(await res.json()); } catch {}
+  }, []);
+  // Files loading
+  const loadFiles = useCallback(async (channelId?: string) => {
+    try {
+      const url = channelId ? `/api/files?channel_id=${encodeURIComponent(channelId)}` : "/api/files";
+      const res = await fetch(url);
+      if (res.ok) setProjectFiles(await res.json());
+    } catch {}
+  }, []);
+  // Invite user
+  async function handleInviteUser() {
+    if (!inviteForm.name.trim() || !inviteForm.email.trim()) return;
+    try {
+      const res = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(inviteForm) });
+      if (res.ok) {
+        const data = await res.json();
+        setInviteResult({ email: data.user.email, temporaryPassword: data.temporaryPassword });
+        setInviteForm({ name: "", email: "", role: "member" });
+        loadAdminUsers();
+        showToast("User invited");
+      } else {
+        const err = await res.json();
+        showToast(err.error || "Invite failed", "error");
+      }
+    } catch { showToast("Invite failed", "error"); }
+  }
+  // Delete/update admin user
+  async function handleDeleteUser(id: number) {
+    try { await fetch(`/api/admin/users/${id}`, { method: "DELETE" }); loadAdminUsers(); showToast("User deleted"); } catch {}
+  }
+  async function handleUpdateUserRole(id: number, role: string) {
+    try { await fetch(`/api/admin/users/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role }) }); loadAdminUsers(); showToast("Role updated"); } catch {}
+  }
+  // Delete file
+  async function handleDeleteFile(id: number) {
+    try { await fetch(`/api/files?id=${id}`, { method: "DELETE" }); loadFiles(); showToast("File deleted"); } catch {}
+  }
+  // Upload file
+  async function handleFileUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploadingFile(true);
+    try {
+      for (const file of Array.from(files)) {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("channel_id", activeProject);
+        const res = await fetch("/api/files/upload", { method: "POST", body: fd });
+        if (!res.ok) { const err = await res.json(); showToast(err.error || "Upload failed", "error"); continue; }
+      }
+      loadFiles();
+      showToast(`${files.length} file${files.length > 1 ? "s" : ""} uploaded`);
+    } catch { showToast("Upload failed", "error"); }
+    finally { setUploadingFile(false); setDragOverFiles(false); }
+  }
+  // Password change
+  async function handlePasswordChange() {
+    if (passwordForm.new !== passwordForm.confirm) { showToast("Passwords don't match", "error"); return; }
+    if (passwordForm.new.length < 8) { showToast("Password must be at least 8 characters", "error"); return; }
+    setPasswordChanging(true);
+    try {
+      const res = await fetch("/api/account/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword: passwordForm.current, newPassword: passwordForm.new }) });
+      if (res.ok) { showToast("Password changed"); setShowPasswordChange(false); setPasswordForm({ current: "", new: "", confirm: "" }); }
+      else { const err = await res.json(); showToast(err.error || "Failed", "error"); }
+    } catch { showToast("Failed to change password", "error"); }
+    finally { setPasswordChanging(false); }
+  }
+  // Load DM users
+  const loadDMUsers = useCallback(async () => {
+    try { const res = await fetch("/api/admin/users"); if (res.ok) setDmUsers(await res.json()); } catch {}
+  }, []);
+
   useEffect(() => { loadProjects(); loadGlobalSettings(); loadWorkspaces(); loadPendingActionCount(); }, [loadProjects, loadGlobalSettings, loadWorkspaces, loadPendingActionCount]);
   useEffect(() => {
     loadMessages(activeProject);
@@ -494,7 +616,16 @@ export default function Home() {
     if (viewMode === "dashboard") loadDashboard();
     if (viewMode === "contacts") loadContacts(contactSearch || undefined);
     if (viewMode === "calendar") loadCalendarEvents(calendarWeekStart);
-  }, [viewMode, loadOfficeMetrics, loadActivityFeed, loadDashboard, loadContacts, loadCalendarEvents, loadMemory, officeTab, contactSearch, calendarWeekStart]);
+    if (viewMode === "admin") { loadAdminUsers(); if (adminTab === "audit") loadAdminAudit(); if (adminTab === "usage") loadAdminUsage(); if (adminTab === "system") loadAdminSystem(); }
+    if (viewMode === "files") loadFiles();
+  }, [viewMode, loadOfficeMetrics, loadActivityFeed, loadDashboard, loadContacts, loadCalendarEvents, loadMemory, officeTab, contactSearch, calendarWeekStart, loadAdminUsers, loadAdminAudit, loadAdminUsage, loadAdminSystem, adminTab, loadFiles]);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
 
   // ─── SSE ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -507,6 +638,18 @@ export default function Home() {
           if (prev.some((m) => m.id === data.message.id)) return prev;
           return [...prev, data.message];
         });
+        // Browser notification for messages from others (when tab not focused)
+        if (data.message.sender !== session?.user?.name && document.hidden) {
+          try {
+            if ("Notification" in window && Notification.permission === "granted") {
+              new Notification(`${data.message.sender}`, {
+                body: data.message.content?.substring(0, 100),
+                icon: "/icons/icon-192.svg",
+                tag: `msg-${data.message.id}`,
+              });
+            }
+          } catch {}
+        }
       }
       if (data.type === "approval_update") {
         setMessages((prev) =>
@@ -550,6 +693,20 @@ export default function Home() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typingAgent]);
+
+  // ─── Presence heartbeat ────────────────────────────────────────
+  useEffect(() => {
+    async function heartbeat() {
+      try {
+        await fetch("/api/presence", { method: "POST" });
+        const res = await fetch("/api/presence");
+        if (res.ok) setOnlineUsers(await res.json());
+      } catch {}
+    }
+    heartbeat();
+    const interval = setInterval(heartbeat, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ─── Actions ─────────────────────────────────────────────────────
   async function handleSend(text?: string) {
@@ -972,6 +1129,49 @@ export default function Home() {
     } catch { setPlayingTTS(null); }
   }
 
+  // ─── Audio Notes ────────────────────────────────────────────────
+  async function startAudioNote() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      audioNoteRecorderRef.current = mr;
+      audioNoteChunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) audioNoteChunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioNoteChunksRef.current, { type: "audio/webm" });
+        if (blob.size > 0) setAudioNoteBlob(blob);
+      };
+      mr.start();
+      setRecordingAudioNote(true);
+    } catch { /* mic denied */ }
+  }
+  function stopAudioNote() {
+    if (audioNoteRecorderRef.current?.state === "recording") audioNoteRecorderRef.current.stop();
+    setRecordingAudioNote(false);
+  }
+  async function sendAudioNote() {
+    if (!audioNoteBlob) return;
+    setSending(true);
+    try {
+      // Transcribe the audio note
+      const fd = new FormData();
+      fd.append("audio", audioNoteBlob, "audio-note.webm");
+      const res = await fetch("/api/voice/transcribe", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.text) {
+        // Send as a message with audio note indicator
+        await fetch("/api/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: `🎙️ *Audio note:* ${data.text}`, channel_id: activeProject }),
+        });
+      }
+    } catch { showToast("Failed to send audio note", "error"); }
+    finally { setSending(false); setAudioNoteBlob(null); }
+  }
+  function discardAudioNote() { setAudioNoteBlob(null); }
+
   // ─── Computed ────────────────────────────────────────────────────
   function switchProject(id: string) {
     setActiveProject(id);
@@ -990,6 +1190,23 @@ export default function Home() {
   const activeInfo = projects.find((p) => p.id === activeProject) || { id: "general", name: "General" };
 
   // ─── Render ──────────────────────────────────────────────────────
+  // Session loading state
+  if (!session) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#09090b]">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#00d4a8]/20">
+            <span className="text-xl font-bold text-[#00d4a8]">S</span>
+          </div>
+          <div className="h-1 w-32 overflow-hidden rounded-full bg-[#27272a]">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-[#00d4a8]" style={{ animation: "pulse 1.5s ease-in-out infinite" }} />
+          </div>
+          <p className="text-[13px] text-[#71717a]">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-background">
       {/* ── Sidebar ── */}
@@ -1063,7 +1280,7 @@ export default function Home() {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               </button>
             </div>
-            {projects.map((proj) => (
+            {projects.filter((p) => !p.is_dm).map((proj) => (
               <div key={proj.id} className="group flex items-center">
                 {editingProject === proj.id ? (
                   <div className="flex flex-1 items-center gap-1 px-4 py-0.5">
@@ -1101,6 +1318,57 @@ export default function Home() {
             ))}
           </div>
 
+          {/* Direct Messages section */}
+          <div className="mb-4">
+            <div className="mb-0.5 flex items-center justify-between px-4">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Direct Messages</span>
+              <button onClick={() => { setShowNewDM(true); loadDMUsers(); }} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New DM">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+            </div>
+            {showNewDM && (
+              <div className="mx-4 mb-2 rounded-lg border border-border bg-surface p-2">
+                <p className="text-[11px] text-muted mb-1.5">Select a user</p>
+                {dmUsers.filter((u) => u.email !== session?.user?.email).map((u) => (
+                  <button key={u.id} onClick={async () => {
+                    try {
+                      const res = await fetch("/api/dm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: u.email }) });
+                      if (res.ok) {
+                        const dm = await res.json();
+                        switchProject(dm.id);
+                        loadProjects();
+                      }
+                    } catch {}
+                    setShowNewDM(false);
+                  }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-hover-bg">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-purple-600/80 text-[10px] font-bold text-white">{u.name[0]?.toUpperCase()}</div>
+                    {u.name}
+                  </button>
+                ))}
+                {dmUsers.filter((u) => u.email !== session?.user?.email).length === 0 && (
+                  <p className="text-[11px] text-muted/60 py-2 text-center">No other users yet. Invite someone from Admin.</p>
+                )}
+                <button onClick={() => setShowNewDM(false)} className="mt-1 w-full text-center text-[11px] text-muted hover:text-foreground">Cancel</button>
+              </div>
+            )}
+            {projects.filter((p) => p.is_dm).map((dm) => {
+              const otherEmail = dm.dm_user1 === session?.user?.email ? dm.dm_user2 : dm.dm_user1;
+              const isOnline = onlineUsers.some((u) => u.email === otherEmail);
+              return (
+                <button key={dm.id} onClick={() => switchProject(dm.id)}
+                  className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[15px] transition-colors ${
+                    activeProject === dm.id ? "bg-accent/15 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg"
+                  }`}>
+                  <div className="relative">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-md bg-purple-600/80 text-[9px] font-bold text-white">{dm.name[0]?.toUpperCase()}</div>
+                    {isOnline && <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-sidebar-bg bg-green-500" />}
+                  </div>
+                  <span className="truncate">{dm.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Contacts & Calendar */}
           <div className="mb-4">
             <button
@@ -1127,8 +1395,38 @@ export default function Home() {
             </button>
           </div>
 
+          {/* Files */}
+          <div className="mb-4">
+            <button
+              onClick={() => navTo("files")}
+              className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
+                viewMode === "files" ? "bg-accent/15 text-accent" : "text-foreground/70 hover:bg-hover-bg"
+              }`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+              Files
+            </button>
+          </div>
+
           {/* Nav section */}
           <div className="border-t border-border pt-3">
+            {/* Docs - opens new tab */}
+            <a
+              href="https://docs.steadybase.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors text-muted hover:bg-hover-bg hover:text-foreground"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+              </svg>
+              Docs
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ml-auto opacity-50">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
             <button
               onClick={() => navTo("office")}
               className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
@@ -1162,19 +1460,38 @@ export default function Home() {
               </svg>
               Settings
             </button>
+            {session?.user?.role === "admin" && (
+              <button
+                onClick={() => navTo("admin")}
+                className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
+                  viewMode === "admin" ? "bg-accent/15 text-accent" : "text-muted hover:bg-hover-bg hover:text-foreground"
+                }`}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                Admin
+              </button>
+            )}
           </div>
         </div>
 
         {/* User footer */}
         <div className="flex items-center gap-2.5 border-t border-border px-4 py-2.5">
           <div className="relative">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-xs font-bold text-white">A</div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-xs font-bold text-white">{(session?.user?.name || "U")[0].toUpperCase()}</div>
             <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar-bg bg-green-500" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-medium text-foreground leading-tight">Andrew McGuire</p>
+            <p className="truncate text-[13px] font-medium text-foreground leading-tight">{session?.user?.name || "User"}</p>
             <p className="text-[11px] text-green-500">Active</p>
           </div>
+          <button onClick={() => setShowPasswordChange(true)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-hover hover:text-foreground" title="Change password">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </button>
+          <button onClick={() => signOut()} className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-hover hover:text-foreground" title="Sign out">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
         </div>
       </aside>
 
@@ -1227,6 +1544,20 @@ export default function Home() {
                   <path d="M9 3h6v6l3 9H6l3-9V3z"/><line x1="8" y1="3" x2="16" y2="3"/>
                 </svg>
                 <h2 className="text-[15px] font-bold text-foreground">The Lab</h2>
+              </div>
+            ) : viewMode === "files" ? (
+              <div className="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <h2 className="text-[15px] font-bold text-foreground">Files</h2>
+              </div>
+            ) : viewMode === "admin" ? (
+              <div className="flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <h2 className="text-[15px] font-bold text-foreground">Admin</h2>
               </div>
             ) : (
               <>
@@ -2899,6 +3230,358 @@ export default function Home() {
           </div>
         )}
 
+        {/* ── Files View ── */}
+        {viewMode === "files" && (
+          <div className="flex-1 overflow-y-auto p-6"
+            onDragOver={(e) => { e.preventDefault(); setDragOverFiles(true); }}
+            onDragLeave={() => setDragOverFiles(false)}
+            onDrop={(e) => { e.preventDefault(); handleFileUpload(e.dataTransfer.files); }}
+          >
+            <div className="mx-auto max-w-4xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold text-foreground">Files</h3>
+                  <p className="mt-1 text-[13px] text-muted">All files across your projects.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(e) => handleFileUpload(e.target.files)} />
+                  <button onClick={() => fileInputRef.current?.click()} disabled={uploadingFile}
+                    className="flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-40">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    {uploadingFile ? "Uploading..." : "Upload"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Drop zone overlay */}
+              {dragOverFiles && (
+                <div className="mt-4 flex items-center justify-center rounded-xl border-2 border-dashed border-accent/50 bg-accent/5 p-12">
+                  <div className="text-center">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="mx-auto text-accent">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p className="mt-2 text-[14px] font-medium text-accent">Drop files here</p>
+                  </div>
+                </div>
+              )}
+
+              {!dragOverFiles && projectFiles.length === 0 ? (
+                <div className="mt-8 flex flex-col items-center rounded-xl border-2 border-dashed border-border p-12 text-center cursor-pointer hover:border-accent/30 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}>
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-muted/30">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  <p className="mt-3 text-[14px] text-muted">No files yet</p>
+                  <p className="mt-1 text-[12px] text-muted/60">Click or drag and drop files here to upload.</p>
+                </div>
+              ) : !dragOverFiles && (
+                <div className="mt-6 overflow-hidden rounded-xl border border-border">
+                  <table className="w-full text-left text-[13px]">
+                    <thead className="border-b border-border bg-surface">
+                      <tr>
+                        <th className="px-4 py-2.5 font-medium text-muted">Name</th>
+                        <th className="px-4 py-2.5 font-medium text-muted">Project</th>
+                        <th className="px-4 py-2.5 font-medium text-muted">Type</th>
+                        <th className="px-4 py-2.5 font-medium text-muted">Size</th>
+                        <th className="px-4 py-2.5 font-medium text-muted">By</th>
+                        <th className="px-4 py-2.5 font-medium text-muted">Uploaded</th>
+                        <th className="px-4 py-2.5 font-medium text-muted w-10"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projectFiles.map((file) => (
+                        <tr key={file.id} className="border-b border-border last:border-0 hover:bg-hover-bg transition-colors">
+                          <td className="px-4 py-2.5 text-foreground font-medium">
+                            <div className="flex items-center gap-2">
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted shrink-0">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                              </svg>
+                              {file.name}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-muted">{file.project_name || file.channel_id}</td>
+                          <td className="px-4 py-2.5"><span className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-muted">{file.file_type}</span></td>
+                          <td className="px-4 py-2.5 text-muted">{file.file_size > 1024 * 1024 ? `${(file.file_size / 1024 / 1024).toFixed(1)} MB` : file.file_size > 1024 ? `${(file.file_size / 1024).toFixed(0)} KB` : `${file.file_size} B`}</td>
+                          <td className="px-4 py-2.5 text-muted text-[12px]">{file.uploaded_by?.split("@")[0] || "-"}</td>
+                          <td className="px-4 py-2.5 text-muted text-[12px]">{new Date(file.created_at).toLocaleDateString()}</td>
+                          <td className="px-4 py-2.5">
+                            <button onClick={() => handleDeleteFile(file.id)} className="text-muted hover:text-red-400" title="Delete">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Admin View ── */}
+        {viewMode === "admin" && session?.user?.role === "admin" && (
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="mx-auto max-w-5xl">
+              <h3 className="text-xl font-bold text-foreground">Admin</h3>
+              <p className="mt-1 text-[13px] text-muted">Manage users, monitor usage, and view system health.</p>
+
+              {/* Admin tabs */}
+              <div className="mt-6 flex gap-1 rounded-lg bg-surface p-1">
+                {(["users", "workspaces", "usage", "audit", "system"] as const).map((tab) => (
+                  <button key={tab} onClick={() => { setAdminTab(tab); if (tab === "audit") loadAdminAudit(); if (tab === "usage") loadAdminUsage(); if (tab === "system") loadAdminSystem(); }}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium capitalize transition-colors ${adminTab === tab ? "bg-background text-foreground shadow-sm" : "text-muted hover:text-foreground"}`}>
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              {/* Users tab */}
+              {adminTab === "users" && (
+                <div className="mt-6">
+                  {/* Invite form */}
+                  <div className="mb-6 rounded-xl border border-border bg-surface p-4">
+                    <h4 className="text-[14px] font-semibold text-foreground mb-3">Invite User</h4>
+                    <div className="flex gap-2 items-end flex-wrap">
+                      <div className="flex-1 min-w-[140px]">
+                        <label className="text-[11px] font-medium text-muted">Name</label>
+                        <input type="text" value={inviteForm.name} onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none" placeholder="Jane Doe"/>
+                      </div>
+                      <div className="flex-1 min-w-[180px]">
+                        <label className="text-[11px] font-medium text-muted">Email</label>
+                        <input type="email" value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none" placeholder="jane@company.com"/>
+                      </div>
+                      <div className="w-28">
+                        <label className="text-[11px] font-medium text-muted">Role</label>
+                        <select value={inviteForm.role} onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none">
+                          <option value="member">Member</option>
+                          <option value="admin">Admin</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                      </div>
+                      <button onClick={handleInviteUser} disabled={!inviteForm.name.trim() || !inviteForm.email.trim()} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-30">Invite</button>
+                    </div>
+                    {inviteResult && (
+                      <div className="mt-3 rounded-lg border border-accent/30 bg-accent/5 p-3">
+                        <p className="text-[13px] text-foreground">Invited <strong>{inviteResult.email}</strong></p>
+                        <p className="mt-1 text-[13px] text-muted">Temporary password: <code className="rounded bg-surface px-2 py-0.5 text-accent font-mono select-all">{inviteResult.temporaryPassword}</code></p>
+                        <p className="mt-1 text-[11px] text-muted">Share this password securely with the user.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Users table */}
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <table className="w-full text-left text-[13px]">
+                      <thead className="border-b border-border bg-surface">
+                        <tr>
+                          <th className="px-4 py-2.5 font-medium text-muted">Name</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">Email</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">Role</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">Status</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">Last Login</th>
+                          <th className="px-4 py-2.5 font-medium text-muted w-20">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminUsers.map((u) => (
+                          <tr key={u.id} className="border-b border-border last:border-0 hover:bg-hover-bg transition-colors">
+                            <td className="px-4 py-2.5 text-foreground font-medium">{u.name}</td>
+                            <td className="px-4 py-2.5 text-muted">{u.email}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${u.role === "admin" ? "bg-accent/15 text-accent" : u.role === "viewer" ? "bg-yellow-500/15 text-yellow-500" : "bg-blue-500/15 text-blue-400"}`}>
+                                {u.role || (u.is_admin ? "admin" : "member")}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span className={`text-[12px] ${u.status === "active" ? "text-green-500" : u.status === "deactivated" ? "text-red-400" : "text-yellow-500"}`}>{u.status || "active"}</span>
+                            </td>
+                            <td className="px-4 py-2.5 text-muted text-[12px]">{u.last_login_at ? relativeTime(u.last_login_at) : "Never"}</td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex gap-1">
+                                <select value={u.role || (u.is_admin ? "admin" : "member")} onChange={(e) => handleUpdateUserRole(u.id, e.target.value)} className="rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-foreground outline-none">
+                                  <option value="member">Member</option>
+                                  <option value="admin">Admin</option>
+                                  <option value="viewer">Viewer</option>
+                                </select>
+                                {u.email !== session?.user?.email && (
+                                  <button onClick={() => handleDeleteUser(u.id)} className="text-muted hover:text-red-400" title="Delete user">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Workspaces tab */}
+              {adminTab === "workspaces" && (
+                <div className="mt-6">
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <table className="w-full text-left text-[13px]">
+                      <thead className="border-b border-border bg-surface">
+                        <tr>
+                          <th className="px-4 py-2.5 font-medium text-muted">Name</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">Members</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">Created</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workspaces.map((ws) => (
+                          <tr key={ws.id} className="border-b border-border last:border-0 hover:bg-hover-bg transition-colors">
+                            <td className="px-4 py-2.5 text-foreground font-medium">{ws.name}</td>
+                            <td className="px-4 py-2.5 text-muted">{ws.member_count}</td>
+                            <td className="px-4 py-2.5 text-muted text-[12px]">{ws.id}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Usage tab */}
+              {adminTab === "usage" && (
+                <div className="mt-6">
+                  {/* 24h KPI cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    {["llm_tokens", "messages", "api_calls", "voice_minutes"].map((type) => {
+                      const val = adminUsage?.totals24h.find((t) => t.usage_type === type);
+                      const labels: Record<string, string> = { llm_tokens: "Tokens (24h)", messages: "Messages (24h)", api_calls: "API Calls (24h)", voice_minutes: "Voice Min (24h)" };
+                      return (
+                        <div key={type} className="rounded-xl border border-border bg-surface p-4">
+                          <p className="text-[11px] font-medium text-muted uppercase">{labels[type]}</p>
+                          <p className="mt-1 text-2xl font-bold text-foreground">{val ? Number(val.total).toLocaleString() : "0"}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* By model */}
+                  {adminUsage?.byModel && adminUsage.byModel.length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="text-[14px] font-semibold text-foreground mb-3">Usage by Model (7d)</h4>
+                      <div className="overflow-hidden rounded-xl border border-border">
+                        <table className="w-full text-left text-[13px]">
+                          <thead className="border-b border-border bg-surface">
+                            <tr><th className="px-4 py-2.5 font-medium text-muted">Model</th><th className="px-4 py-2.5 font-medium text-muted">Tokens</th></tr>
+                          </thead>
+                          <tbody>
+                            {adminUsage.byModel.map((m, i) => (
+                              <tr key={i} className="border-b border-border last:border-0 hover:bg-hover-bg"><td className="px-4 py-2.5 text-foreground">{m.model}</td><td className="px-4 py-2.5 text-muted">{Number(m.total).toLocaleString()}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* By user */}
+                  {adminUsage?.byUser && adminUsage.byUser.length > 0 && (
+                    <div>
+                      <h4 className="text-[14px] font-semibold text-foreground mb-3">Usage by User (7d)</h4>
+                      <div className="overflow-hidden rounded-xl border border-border">
+                        <table className="w-full text-left text-[13px]">
+                          <thead className="border-b border-border bg-surface">
+                            <tr><th className="px-4 py-2.5 font-medium text-muted">User</th><th className="px-4 py-2.5 font-medium text-muted">Type</th><th className="px-4 py-2.5 font-medium text-muted">Amount</th></tr>
+                          </thead>
+                          <tbody>
+                            {adminUsage.byUser.map((u, i) => (
+                              <tr key={i} className="border-b border-border last:border-0 hover:bg-hover-bg"><td className="px-4 py-2.5 text-foreground">{u.user_email}</td><td className="px-4 py-2.5 text-muted">{u.usage_type}</td><td className="px-4 py-2.5 text-muted">{Number(u.total).toLocaleString()}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Audit tab */}
+              {adminTab === "audit" && (
+                <div className="mt-6">
+                  <div className="overflow-hidden rounded-xl border border-border">
+                    <table className="w-full text-left text-[13px]">
+                      <thead className="border-b border-border bg-surface">
+                        <tr>
+                          <th className="px-4 py-2.5 font-medium text-muted">Time</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">User</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">Action</th>
+                          <th className="px-4 py-2.5 font-medium text-muted">Resource</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminAudit.entries.map((entry) => (
+                          <tr key={entry.id} className="border-b border-border last:border-0 hover:bg-hover-bg transition-colors">
+                            <td className="px-4 py-2.5 text-muted text-[12px] whitespace-nowrap">{new Date(entry.created_at).toLocaleString()}</td>
+                            <td className="px-4 py-2.5 text-foreground">{entry.user_email}</td>
+                            <td className="px-4 py-2.5"><span className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-accent">{entry.action}</span></td>
+                            <td className="px-4 py-2.5 text-muted">{entry.resource_type}{entry.resource_id ? `: ${entry.resource_id}` : ""}</td>
+                          </tr>
+                        ))}
+                        {adminAudit.entries.length === 0 && (
+                          <tr><td colSpan={4} className="px-4 py-8 text-center text-muted">No audit events yet</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {adminAudit.totalPages > 1 && (
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                      <button onClick={() => loadAdminAudit(adminAudit.page - 1)} disabled={adminAudit.page <= 1} className="rounded-lg border border-border px-3 py-1 text-[12px] text-muted hover:text-foreground disabled:opacity-30">Prev</button>
+                      <span className="text-[12px] text-muted">Page {adminAudit.page} of {adminAudit.totalPages}</span>
+                      <button onClick={() => loadAdminAudit(adminAudit.page + 1)} disabled={adminAudit.page >= adminAudit.totalPages} className="rounded-lg border border-border px-3 py-1 text-[12px] text-muted hover:text-foreground disabled:opacity-30">Next</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* System tab */}
+              {adminTab === "system" && adminSystem && (
+                <div className="mt-6 space-y-6">
+                  {/* Server info */}
+                  <div className="rounded-xl border border-border bg-surface p-4">
+                    <h4 className="text-[14px] font-semibold text-foreground mb-3">Server</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-[13px]">
+                      <div><p className="text-muted">Node</p><p className="text-foreground font-medium">{adminSystem.server.nodeVersion}</p></div>
+                      <div><p className="text-muted">Platform</p><p className="text-foreground font-medium">{adminSystem.server.platform}</p></div>
+                      <div><p className="text-muted">Uptime</p><p className="text-foreground font-medium">{Math.floor(adminSystem.server.uptime / 60)}m</p></div>
+                      <div><p className="text-muted">Heap</p><p className="text-foreground font-medium">{(adminSystem.server.memoryUsage.heapUsed / 1024 / 1024).toFixed(0)} MB / {(adminSystem.server.memoryUsage.heapTotal / 1024 / 1024).toFixed(0)} MB</p></div>
+                    </div>
+                  </div>
+
+                  {/* DB pool */}
+                  <div className="rounded-xl border border-border bg-surface p-4">
+                    <h4 className="text-[14px] font-semibold text-foreground mb-3">Database Pool</h4>
+                    <div className="grid grid-cols-3 gap-4 text-[13px]">
+                      <div><p className="text-muted">Total</p><p className="text-foreground font-medium">{adminSystem.pool.totalCount}</p></div>
+                      <div><p className="text-muted">Idle</p><p className="text-foreground font-medium">{adminSystem.pool.idleCount}</p></div>
+                      <div><p className="text-muted">Waiting</p><p className="text-foreground font-medium">{adminSystem.pool.waitingCount}</p></div>
+                    </div>
+                  </div>
+
+                  {/* Table counts */}
+                  <div className="rounded-xl border border-border bg-surface p-4">
+                    <h4 className="text-[14px] font-semibold text-foreground mb-3">Table Row Counts</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-[13px]">
+                      {Object.entries(adminSystem.tableCounts).map(([table, count]) => (
+                        <div key={table} className="flex items-center justify-between rounded-lg bg-background px-3 py-2">
+                          <span className="text-muted">{table}</span>
+                          <span className="font-medium text-foreground">{count.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── Chat View ── */}
         {viewMode === "chat" && (
         <>
@@ -3150,8 +3833,59 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Audio note preview */}
+            {audioNoteBlob && (
+              <div className="flex items-center gap-2 border-b border-border px-3 py-2 bg-accent/5">
+                <div className="flex items-center gap-1">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/></svg>
+                  <span className="text-[12px] text-accent font-medium">Audio note ready</span>
+                </div>
+                <div className="flex-1"/>
+                <button onClick={discardAudioNote} className="text-[11px] text-muted hover:text-foreground">Discard</button>
+                <button onClick={sendAudioNote} disabled={sending} className="rounded-md bg-accent px-3 py-1 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-30">Send</button>
+              </div>
+            )}
+
             {/* Text input */}
-            <div className="flex items-end gap-2 px-3 py-2">
+            <div className="flex items-end gap-1.5 px-3 py-2">
+              {/* Emoji picker button */}
+              <div className="relative mb-0.5">
+                <button
+                  onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover-bg hover:text-foreground"
+                  title="Emoji"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                </button>
+                {emojiPickerOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setEmojiPickerOpen(false)}/>
+                    <div className="absolute bottom-10 left-0 z-50">
+                      <Picker data={data} onEmojiSelect={(emoji: { native: string }) => { setInput((prev) => prev + emoji.native); setEmojiPickerOpen(false); inputRef.current?.focus(); }} theme="dark" previewPosition="none" skinTonePosition="none" />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Audio note button */}
+              <button
+                onMouseDown={recordingAudioNote ? undefined : startAudioNote}
+                onMouseUp={recordingAudioNote ? stopAudioNote : undefined}
+                onMouseLeave={() => recordingAudioNote && stopAudioNote()}
+                onTouchStart={recordingAudioNote ? undefined : startAudioNote}
+                onTouchEnd={recordingAudioNote ? stopAudioNote : undefined}
+                disabled={sending || transcribing}
+                className={`mb-0.5 flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                  recordingAudioNote ? "bg-red-500 text-white" : "text-muted hover:bg-hover-bg hover:text-foreground"
+                }`}
+                title="Hold to record audio note"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+              </button>
+
               <textarea
                 ref={inputRef}
                 value={input}
@@ -3160,11 +3894,12 @@ export default function Home() {
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
                 }}
                 placeholder={
+                  recordingAudioNote ? "Recording audio note..." :
                   recording ? "Listening..." :
                   transcribing ? "Transcribing..." :
                   "Ask Drew anything..."
                 }
-                disabled={sending || recording || transcribing}
+                disabled={sending || recording || transcribing || recordingAudioNote}
                 rows={1}
                 className="flex-1 resize-none bg-transparent text-[15px] text-foreground placeholder-muted outline-none disabled:opacity-50"
                 style={{ minHeight: "24px", maxHeight: "120px" }}
@@ -3627,36 +4362,169 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Persistent Mic FAB ── */}
-      {viewMode !== "chat" && viewMode !== "dashboard" && (
+      {/* ── Floating Brain Button ── */}
+      {viewMode !== "chat" && (
         <button
-          onMouseDown={startRecording}
-          onMouseUp={stopRecording}
-          onMouseLeave={() => recording && stopRecording()}
-          onTouchStart={startRecording}
-          onTouchEnd={stopRecording}
-          disabled={sending || transcribing}
-          className={`fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all ${
-            recording ? "bg-red-500 text-white scale-110" : transcribing ? "bg-accent/80 text-white" : "bg-accent text-white hover:opacity-90"
-          }`}
-          title="Hold to speak to Drew"
+          onClick={() => setBrainOverlayOpen(true)}
+          className={`fixed bottom-20 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all bg-accent text-white hover:opacity-90 brain-pulse md:bottom-6`}
+          title="Talk to Drew"
         >
-          {transcribing ? (
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"/>
-          ) : recording ? (
-            <div className="flex items-center gap-0.5">
-              <span className="h-3 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "0ms" }}/>
-              <span className="h-5 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "150ms" }}/>
-              <span className="h-4 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "300ms" }}/>
-              <span className="h-3 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "450ms" }}/>
-            </div>
-          ) : (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-          )}
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 6.5V18h8v-2.5c1.5-1.5 3-3.5 3-6.5a7 7 0 0 0-7-7z"/>
+            <path d="M9 22h6"/><path d="M10 18v4"/><path d="M14 18v4"/>
+          </svg>
         </button>
+      )}
+
+      {/* ── Brain Voice Overlay ── */}
+      {brainOverlayOpen && (
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-background/95 md:inset-auto md:right-6 md:bottom-24 md:w-[360px] md:h-[400px] md:rounded-2xl md:border md:border-border md:bg-surface md:shadow-2xl">
+          <button onClick={() => setBrainOverlayOpen(false)} className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:text-foreground hover:bg-hover-bg">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+          <div className="flex flex-col items-center gap-6">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-accent/20">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent">
+                <path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 6.5V18h8v-2.5c1.5-1.5 3-3.5 3-6.5a7 7 0 0 0-7-7z"/>
+                <path d="M9 22h6"/><path d="M10 18v4"/><path d="M14 18v4"/>
+              </svg>
+            </div>
+            <p className="text-[15px] font-medium text-foreground">{recording ? "Listening..." : transcribing ? "Transcribing..." : "Hold to speak to Drew"}</p>
+            <button
+              onMouseDown={startRecording}
+              onMouseUp={stopRecording}
+              onMouseLeave={() => recording && stopRecording()}
+              onTouchStart={startRecording}
+              onTouchEnd={stopRecording}
+              disabled={sending || transcribing}
+              className={`flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all ${
+                recording ? "bg-red-500 text-white scale-110" : transcribing ? "bg-accent/80 text-white" : "bg-accent text-white hover:opacity-90"
+              }`}
+            >
+              {transcribing ? (
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"/>
+              ) : recording ? (
+                <div className="flex items-center gap-0.5">
+                  <span className="h-3 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "0ms" }}/>
+                  <span className="h-5 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "150ms" }}/>
+                  <span className="h-4 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "300ms" }}/>
+                  <span className="h-3 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "450ms" }}/>
+                </div>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                  <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile Bottom Nav ── */}
+      <nav className="mobile-nav items-center justify-around px-2">
+        <button onClick={() => navTo("dashboard")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "dashboard" ? "text-accent" : "text-muted"}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span className="text-[10px] font-medium">Home</span>
+        </button>
+        <button onClick={() => { navTo("chat"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "chat" ? "text-accent" : "text-muted"}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span className="text-[10px] font-medium">Chat</span>
+        </button>
+        <button onClick={() => navTo("board")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "board" ? "text-accent" : "text-muted"}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+          <span className="text-[10px] font-medium">Tasks</span>
+        </button>
+        <button onClick={() => navTo("contacts")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "contacts" ? "text-accent" : "text-muted"}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          <span className="text-[10px] font-medium">Contacts</span>
+        </button>
+        <button onClick={() => setMoreSheetOpen(true)} className={`flex flex-col items-center gap-0.5 px-2 py-1 text-muted`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+          <span className="text-[10px] font-medium">More</span>
+        </button>
+      </nav>
+
+      {/* ── More Sheet (mobile slide-up) ── */}
+      {/* ── Password Change Modal ── */}
+      {showPasswordChange && (
+        <>
+          <div className="fixed inset-0 z-[80] bg-black/50" onClick={() => setShowPasswordChange(false)} />
+          <div className="fixed left-1/2 top-1/2 z-[81] w-[380px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-surface p-6 shadow-2xl">
+            <h3 className="text-[16px] font-bold text-foreground">Change Password</h3>
+            <p className="mt-1 text-[12px] text-muted">Update your account password.</p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="text-[12px] font-medium text-muted">Current Password</label>
+                <input type="password" value={passwordForm.current} onChange={(e) => setPasswordForm({ ...passwordForm, current: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-muted">New Password</label>
+                <input type="password" value={passwordForm.new} onChange={(e) => setPasswordForm({ ...passwordForm, new: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50" placeholder="Min 8 characters" />
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-muted">Confirm New Password</label>
+                <input type="password" value={passwordForm.confirm} onChange={(e) => setPasswordForm({ ...passwordForm, confirm: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50" />
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => { setShowPasswordChange(false); setPasswordForm({ current: "", new: "", confirm: "" }); }}
+                className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-muted hover:text-foreground">Cancel</button>
+              <button onClick={handlePasswordChange} disabled={passwordChanging || !passwordForm.current || !passwordForm.new || !passwordForm.confirm}
+                className="rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-30">
+                {passwordChanging ? "Changing..." : "Change Password"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── More Sheet (mobile slide-up) ── */}
+      {moreSheetOpen && (
+        <>
+          <div className="fixed inset-0 z-[55] bg-black/50" onClick={() => setMoreSheetOpen(false)}/>
+          <div className="fixed bottom-0 left-0 right-0 z-[56] rounded-t-2xl border-t border-border bg-surface pb-8 sheet-animate" style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}>
+            <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-muted/30"/>
+            <div className="mt-4 px-4 space-y-1">
+              {[
+                { mode: "calendar" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>, label: "Calendar" },
+                { mode: "files" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>, label: "Files" },
+                { mode: "office" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>, label: "The Office" },
+                { mode: "lab" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 3h6v6l3 9H6l3-9V3z"/><line x1="8" y1="3" x2="16" y2="3"/></svg>, label: "The Lab" },
+                { mode: "settings" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>, label: "Settings" },
+              ].map((item) => (
+                <button key={item.mode} onClick={() => { navTo(item.mode); setMoreSheetOpen(false); }} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[15px] transition-colors ${viewMode === item.mode ? "bg-accent/15 text-accent" : "text-foreground hover:bg-hover-bg"}`}>
+                  {item.icon}
+                  {item.label}
+                </button>
+              ))}
+              {session?.user?.role === "admin" && (
+                <button onClick={() => { navTo("admin"); setMoreSheetOpen(false); }} className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[15px] transition-colors ${viewMode === "admin" ? "bg-accent/15 text-accent" : "text-foreground hover:bg-hover-bg"}`}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  Admin
+                </button>
+              )}
+              <div className="border-t border-border pt-2 mt-2">
+                <a href="https://docs.steadybase.io" target="_blank" rel="noopener noreferrer" className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[15px] text-foreground hover:bg-hover-bg">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                  Docs
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ml-auto opacity-50"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                </a>
+                <button onClick={() => { setShowPasswordChange(true); setMoreSheetOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[15px] text-foreground hover:bg-hover-bg">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  Change Password
+                </button>
+                <button onClick={() => { signOut(); setMoreSheetOpen(false); }} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[15px] text-red-400 hover:bg-hover-bg">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

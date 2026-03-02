@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ServiceWorkerRegistrar } from "./sw-register";
+import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "SteadyChat",
@@ -32,7 +33,9 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
       </head>
       <body className="antialiased">
-        {children}
+        <Providers>
+          {children}
+        </Providers>
         <ServiceWorkerRegistrar />
       </body>
     </html>

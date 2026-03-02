@@ -9,11 +9,22 @@
     "lint": "eslint",
     "setup-db": "npx tsx src/lib/setup-db.ts",
     "setup-db:seed": "npx tsx src/lib/setup-db.ts --seed",
-    "migrate": "npx tsx src/lib/setup-db.ts"
+    "migrate": "npx tsx src/lib/setup-db.ts",
+    "seed-admin": "npx tsx src/lib/seed-admin.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
+    "@aws-sdk/client-s3": "^3.1000.0",
+    "@aws-sdk/s3-request-presigner": "^3.1000.0",
+    "@capacitor/cli": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
+    "@capacitor/ios": "^8.1.0",
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
+    "bcryptjs": "^3.0.3",
+    "emoji-mart": "^5.6.0",
     "next": "16.1.6",
+    "next-auth": "^5.0.0-beta.30",
     "openai": "^6.25.0",
     "pg": "^8.19.0",
     "react": "19.2.3",
@@ -23,6 +34,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/pg": "^8.18.0",
     "@types/react": "^19",

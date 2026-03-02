@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS channels (
   project_type TEXT DEFAULT 'project',
   skills_context TEXT,
   status TEXT DEFAULT 'active',
+  is_dm BOOLEAN DEFAULT false,
+  dm_user1 TEXT,
+  dm_user2 TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -62,6 +65,8 @@ CREATE TABLE IF NOT EXISTS project_files (
   file_path TEXT NOT NULL,
   file_type TEXT NOT NULL,
   file_size INTEGER NOT NULL,
+  s3_key TEXT,
+  uploaded_by TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -206,6 +211,46 @@ CREATE TABLE IF NOT EXISTS assistant_actions (
   result TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Users (auth)
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  password_hash TEXT,
+  avatar_url TEXT,
+  auth_provider TEXT NOT NULL DEFAULT 'credentials',
+  is_admin BOOLEAN DEFAULT false,
+  last_login_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Audit log
+CREATE TABLE IF NOT EXISTS audit_log (
+  id SERIAL PRIMARY KEY,
+  workspace_id TEXT DEFAULT 'default',
+  user_email TEXT NOT NULL,
+  action TEXT NOT NULL,
+  resource_type TEXT NOT NULL,
+  resource_id TEXT,
+  details JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
+
+-- Usage log
+CREATE TABLE IF NOT EXISTS usage_log (
+  id SERIAL PRIMARY KEY,
+  workspace_id TEXT DEFAULT 'default',
+  user_email TEXT,
+  usage_type TEXT NOT NULL CHECK (usage_type IN ('llm_tokens','messages','api_calls','voice_minutes')),
+  amount INTEGER NOT NULL DEFAULT 0,
+  model TEXT,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_usage_type_date ON usage_log(usage_type, created_at DESC);
 
 -- Seed data (basic — runs before migration, so only use base columns)
 INSERT INTO workspaces (id, name) VALUES ('default', 'SteadyChat') ON CONFLICT DO NOTHING;

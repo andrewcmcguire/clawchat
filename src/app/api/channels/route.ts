@@ -5,7 +5,7 @@ import { broadcast } from "@/lib/sse";
 // Projects API (backed by channels table)
 export async function GET() {
   const result = await pool.query(
-    "SELECT id, name, description, COALESCE(project_type, 'project') as project_type, COALESCE(status, 'active') as status, created_at FROM channels ORDER BY created_at ASC"
+    "SELECT id, name, description, COALESCE(project_type, 'project') as project_type, COALESCE(status, 'active') as status, COALESCE(is_dm, false) as is_dm, dm_user1, dm_user2, created_at FROM channels ORDER BY created_at ASC"
   );
 
   return NextResponse.json(result.rows);
