@@ -13,7 +13,7 @@ export const agents: Record<string, Agent> = {
     id: "drew",
     name: "Drew",
     role: "Brain",
-    color: "#00d4a8",
+    color: "#8b5cf6",
     avatar: "D",
     model: "opus",
     systemPrompt: `You are Drew, the primary AI brain for SteadyChat — a project-oriented operations hub built by Steadybase.

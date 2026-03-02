@@ -156,6 +156,10 @@ ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_dm BOOLEAN DEFAULT false;
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS dm_user1 TEXT;
 ALTER TABLE channels ADD COLUMN IF NOT EXISTS dm_user2 TEXT;
 
+-- Conversation memory summary
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS memory_summary TEXT;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS summary_updated_at TIMESTAMPTZ;
+
 -- Assistant action queue (Drew's autonomous tasks)
 CREATE TABLE IF NOT EXISTS assistant_actions (
   id SERIAL PRIMARY KEY,

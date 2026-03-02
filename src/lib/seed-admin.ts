@@ -57,7 +57,15 @@ async function seedAdmin() {
     [email]
   );
 
+  // Seed code channel
+  await dbPool.query(
+    `INSERT INTO channels (id, workspace_id, name, description, project_type)
+     VALUES ('code', 'default', 'Code', 'Terminal-style coding channel with Drew', 'code')
+     ON CONFLICT (id) DO UPDATE SET project_type = 'code'`
+  );
+
   console.log(`Admin user created: ${email}`);
+  console.log(`Code channel seeded`);
   await dbPool.end();
 }
 

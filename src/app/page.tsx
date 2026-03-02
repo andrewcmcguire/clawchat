@@ -62,7 +62,8 @@ interface ProjectTask {
   updated_at: string;
 }
 
-type ViewMode = "dashboard" | "chat" | "board" | "settings" | "office" | "lab" | "contacts" | "calendar" | "files" | "admin";
+type ViewMode = "dashboard" | "ask" | "projects" | "lab" | "contacts" | "calendar" | "files" | "admin" | "settings" | "office";
+type ProjectTab = "overview" | "list" | "board" | "timeline" | "messages" | "files";
 
 interface Contact { id: number; name: string; email: string | null; phone: string | null; company: string | null; role: string | null; linkedin_url: string | null; channels: Record<string, boolean>; notes: string | null; last_contacted_at: string | null; }
 interface ContactInteraction { id: number; type: string; summary: string; transcript_id: number | null; initiated_by: string; created_at: string; }
@@ -134,7 +135,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 
 // ─── Constants ───────────────────────────────────────────────────────
-const drewMeta = { color: "#00d4a8", role: "Brain", avatar: "D" };
+const drewMeta = { color: "#8b5cf6", role: "Brain", avatar: "D" };
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 function formatTime(dateStr: string) {
@@ -205,6 +206,8 @@ export default function Home() {
   const [newSkillContent, setNewSkillContent] = useState("");
   const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
+  const [projectTab, setProjectTab] = useState<ProjectTab>("messages");
+  const [secondarySidebarOpen, setSecondarySidebarOpen] = useState(true);
   const [tasks, setTasks] = useState<ProjectTask[]>([]);
   const [showAddTask, setShowAddTask] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
@@ -962,7 +965,7 @@ export default function Home() {
     if (projectId === "general") { showToast("Cannot delete General project", "error"); return; }
     try {
       await fetch(`/api/channels?id=${encodeURIComponent(projectId)}`, { method: "DELETE" });
-      if (activeProject === projectId) { setActiveProject("general"); setViewMode("chat"); }
+      if (activeProject === projectId) { setActiveProject("general"); setViewMode("ask"); }
       loadProjects();
       showToast("Project deleted");
     } catch (err) { console.error("Delete project failed:", err); showToast("Failed to delete", "error"); }
@@ -1178,7 +1181,7 @@ export default function Home() {
     setTypingAgent(null);
     setMessages([]);
     setSkillsPanelOpen(false);
-    setViewMode("chat");
+    setViewMode("ask");
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       setSidebarOpen(false);
     }
@@ -1186,20 +1189,21 @@ export default function Home() {
 
   const activeSkillCount = skills.filter((s) => s.active).length;
 
-  const activeWorkspaceInfo = workspaces.find((w) => w.id === activeWorkspace) || { id: "default", name: "SteadyChat", description: null, member_count: 1 };
+  const activeWorkspaceInfo = workspaces.find((w) => w.id === activeWorkspace) || { id: "default", name: "Steadybase", description: null, member_count: 1 };
   const activeInfo = projects.find((p) => p.id === activeProject) || { id: "general", name: "General" };
+  const isCodeChannel = activeInfo.project_type === "code";
 
   // ─── Render ──────────────────────────────────────────────────────
   // Session loading state
   if (!session) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#09090b]">
+      <div className="flex h-screen items-center justify-center bg-[#0a0a0b]">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#00d4a8]/20">
-            <span className="text-xl font-bold text-[#00d4a8]">S</span>
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#8b5cf6]/20">
+            <span className="text-xl font-bold text-[#8b5cf6]">S</span>
           </div>
           <div className="h-1 w-32 overflow-hidden rounded-full bg-[#27272a]">
-            <div className="h-full w-1/2 animate-pulse rounded-full bg-[#00d4a8]" style={{ animation: "pulse 1.5s ease-in-out infinite" }} />
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-[#8b5cf6]" style={{ animation: "pulse 1.5s ease-in-out infinite" }} />
           </div>
           <p className="text-[13px] text-[#71717a]">Loading...</p>
         </div>
@@ -1209,21 +1213,71 @@ export default function Home() {
 
   return (
     <div className="flex h-screen bg-background">
-      {/* ── Sidebar ── */}
+      {/* ── Mobile sidebar overlay ── */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
+
+      {/* ── Icon Bar (Primary Sidebar) ── */}
+      <div className="icon-bar hidden md:flex w-[64px] flex-col items-center border-r border-border bg-icon-bar-bg py-3 shrink-0">
+        {/* Logo */}
+        <button onClick={() => navTo("dashboard")} className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 transition-all hover:bg-accent/25" title="Steadybase">
+          <span className="text-lg font-bold gradient-text">S</span>
+        </button>
+
+        {/* Nav icons */}
+        <div className="flex flex-col items-center gap-1">
+          <button onClick={() => navTo("dashboard")} className={`icon-btn ${viewMode === "dashboard" ? "active" : ""}`} title="Dashboard">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </button>
+          <button onClick={() => navTo("ask")} className={`icon-btn ${viewMode === "ask" ? "active" : ""}`} title="Ask Drew">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+          <button onClick={() => navTo("lab")} className={`icon-btn ${viewMode === "lab" ? "active" : ""}`} title="Lab">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 3h6v6l3 9H6l3-9V3z"/><line x1="8" y1="3" x2="16" y2="3"/></svg>
+          </button>
+          <button onClick={() => navTo("projects")} className={`icon-btn ${viewMode === "projects" ? "active" : ""}`} title="Projects">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </button>
+          <button onClick={() => navTo("calendar")} className={`icon-btn ${viewMode === "calendar" ? "active" : ""}`} title="Calendar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </button>
+          <button onClick={() => navTo("files")} className={`icon-btn ${viewMode === "files" ? "active" : ""}`} title="Files">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          </button>
+          <button onClick={() => navTo("contacts")} className={`icon-btn ${viewMode === "contacts" ? "active" : ""}`} title="Contacts">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          </button>
+        </div>
+
+        {/* Bottom section */}
+        <div className="mt-auto flex flex-col items-center gap-1">
+          {session?.user?.role === "admin" && (
+            <button onClick={() => navTo("admin")} className={`icon-btn ${viewMode === "admin" ? "active" : ""}`} title="Admin">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </button>
+          )}
+          <button onClick={() => navTo("settings")} className={`icon-btn ${viewMode === "settings" ? "active" : ""}`} title="Settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          </button>
+          <div className="mt-2 flex h-8 w-8 items-center justify-center rounded-full bg-accent/20 text-[11px] font-bold text-accent cursor-pointer" onClick={() => signOut()} title={`${session?.user?.email} — Sign out`}>
+            {session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || "U"}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Secondary Sidebar ── */}
       <aside className={`flex flex-col border-r border-border bg-sidebar-bg transition-all duration-200 ${
         sidebarOpen
-          ? "fixed inset-y-0 left-0 z-50 w-[260px] md:relative md:z-auto"
-          : "w-0 overflow-hidden"
+          ? "fixed inset-y-0 left-0 z-50 w-[260px] md:relative md:z-auto md:w-[260px]"
+          : "w-0 overflow-hidden md:w-[260px]"
       }`}>
-        {/* Workspace header with switcher */}
+        {/* Workspace header */}
         <div className="relative flex h-[49px] items-center gap-2.5 border-b border-border px-4">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/20">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/15">
             <span className="text-xs font-bold text-accent">S</span>
           </div>
           <button onClick={() => setShowWorkspaceSwitcher(!showWorkspaceSwitcher)} className="min-w-0 flex-1 text-left">
@@ -1256,27 +1310,11 @@ export default function Home() {
         </div>
 
         <div className="flex-1 overflow-y-auto py-3">
-          {/* Dashboard */}
-          <button
-            onClick={() => navTo("dashboard")}
-            className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
-              viewMode === "dashboard" ? "bg-accent/15 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg"
-            }`}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-            </svg>
-            Dashboard
-            {pendingActionCount > 0 && (
-              <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">{pendingActionCount}</span>
-            )}
-          </button>
-
-          {/* Projects section */}
-          <div className="mt-4 mb-4">
+          {/* Channels section */}
+          <div className="mb-4">
             <div className="mb-0.5 flex items-center justify-between px-4">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Projects</span>
-              <button onClick={() => setShowNewProject(true)} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New project">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Channels</span>
+              <button onClick={() => setShowNewProject(true)} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New channel">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               </button>
             </div>
@@ -1291,23 +1329,21 @@ export default function Home() {
                   <>
                     <button
                       onClick={() => switchProject(proj.id)}
-                      className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-4 py-[5px] text-left text-[15px] transition-colors ${
-                        activeProject === proj.id && (viewMode === "chat" || viewMode === "board")
-                          ? "bg-accent/15 font-semibold text-accent"
-                          : "text-foreground/70 hover:bg-hover-bg"
+                      className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-4 py-[6px] text-left text-[14px] transition-colors ${
+                        activeProject === proj.id
+                          ? "bg-accent/10 font-medium text-accent"
+                          : "text-foreground/60 hover:bg-hover-bg hover:text-foreground/90"
                       }`}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-muted/60">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                      </svg>
+                      <span className="text-muted/50 text-[13px]">#</span>
                       <span className="truncate">{proj.name}</span>
                     </button>
                     <div className="flex shrink-0 gap-0.5 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={(e) => { e.stopPropagation(); setEditingProject(proj.id); setEditProjectName(proj.name); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/60 hover:text-foreground" title="Rename">
+                      <button onClick={(e) => { e.stopPropagation(); setEditingProject(proj.id); setEditProjectName(proj.name); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-foreground" title="Rename">
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
                       {proj.id !== "general" && (
-                        <button onClick={(e) => { e.stopPropagation(); deleteProject(proj.id); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/60 hover:text-red-400" title="Delete">
+                        <button onClick={(e) => { e.stopPropagation(); deleteProject(proj.id); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-red-400" title="Delete">
                           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                         </button>
                       )}
@@ -1341,12 +1377,12 @@ export default function Home() {
                     } catch {}
                     setShowNewDM(false);
                   }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-hover-bg">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-purple-600/80 text-[10px] font-bold text-white">{u.name[0]?.toUpperCase()}</div>
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/20 text-[10px] font-bold text-accent">{u.name[0]?.toUpperCase()}</div>
                     {u.name}
                   </button>
                 ))}
                 {dmUsers.filter((u) => u.email !== session?.user?.email).length === 0 && (
-                  <p className="text-[11px] text-muted/60 py-2 text-center">No other users yet. Invite someone from Admin.</p>
+                  <p className="text-[11px] text-muted/60 py-2 text-center">No other users yet. Invite from Admin.</p>
                 )}
                 <button onClick={() => setShowNewDM(false)} className="mt-1 w-full text-center text-[11px] text-muted hover:text-foreground">Cancel</button>
               </div>
@@ -1356,11 +1392,11 @@ export default function Home() {
               const isOnline = onlineUsers.some((u) => u.email === otherEmail);
               return (
                 <button key={dm.id} onClick={() => switchProject(dm.id)}
-                  className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[15px] transition-colors ${
-                    activeProject === dm.id ? "bg-accent/15 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg"
+                  className={`flex w-full items-center gap-2 rounded-md px-4 py-[6px] text-left text-[14px] transition-colors ${
+                    activeProject === dm.id ? "bg-accent/10 font-medium text-accent" : "text-foreground/60 hover:bg-hover-bg"
                   }`}>
                   <div className="relative">
-                    <div className="flex h-5 w-5 items-center justify-center rounded-md bg-purple-600/80 text-[9px] font-bold text-white">{dm.name[0]?.toUpperCase()}</div>
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/20 text-[9px] font-bold text-accent">{dm.name[0]?.toUpperCase()}</div>
                     {isOnline && <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-sidebar-bg bg-green-500" />}
                   </div>
                   <span className="truncate">{dm.name}</span>
@@ -1369,128 +1405,33 @@ export default function Home() {
             })}
           </div>
 
-          {/* Contacts & Calendar */}
-          <div className="mb-4">
-            <button
-              onClick={() => { navTo("contacts"); setSelectedContact(null); }}
-              className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
-                viewMode === "contacts" ? "bg-accent/15 text-accent" : "text-foreground/70 hover:bg-hover-bg"
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-              </svg>
-              Contacts
-            </button>
-            <button
-              onClick={() => { navTo("calendar"); setSelectedEvent(null); }}
-              className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
-                viewMode === "calendar" ? "bg-accent/15 text-accent" : "text-foreground/70 hover:bg-hover-bg"
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-              </svg>
-              Calendar
-            </button>
-          </div>
-
-          {/* Files */}
-          <div className="mb-4">
-            <button
-              onClick={() => navTo("files")}
-              className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
-                viewMode === "files" ? "bg-accent/15 text-accent" : "text-foreground/70 hover:bg-hover-bg"
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-              </svg>
-              Files
-            </button>
-          </div>
-
-          {/* Nav section */}
-          <div className="border-t border-border pt-3">
-            {/* Docs - opens new tab */}
-            <a
-              href="https://docs.steadybase.io"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors text-muted hover:bg-hover-bg hover:text-foreground"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-              </svg>
-              Docs
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ml-auto opacity-50">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-            </a>
-            <button
-              onClick={() => navTo("office")}
-              className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
-                viewMode === "office" ? "bg-accent/15 text-accent" : "text-muted hover:bg-hover-bg hover:text-foreground"
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-                <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-              </svg>
-              The Office
-            </button>
-            <button
-              onClick={() => navTo("lab")}
-              className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
-                viewMode === "lab" ? "bg-accent/15 text-accent" : "text-muted hover:bg-hover-bg hover:text-foreground"
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-                <path d="M9 3h6v6l3 9H6l3-9V3z"/><line x1="8" y1="3" x2="16" y2="3"/>
-              </svg>
-              The Lab
-            </button>
-            <button
-              onClick={() => navTo("settings")}
-              className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
-                viewMode === "settings" ? "bg-accent/15 text-accent" : "text-muted hover:bg-hover-bg hover:text-foreground"
-              }`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-              </svg>
-              Settings
-            </button>
-            {session?.user?.role === "admin" && (
-              <button
-                onClick={() => navTo("admin")}
-                className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[14px] transition-colors ${
-                  viewMode === "admin" ? "bg-accent/15 text-accent" : "text-muted hover:bg-hover-bg hover:text-foreground"
-                }`}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                Admin
-              </button>
-            )}
-          </div>
+          {/* Online now */}
+          {onlineUsers.length > 0 && (
+            <div className="border-t border-border pt-3 px-4">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Online</span>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {onlineUsers.map((u) => (
+                  <div key={u.email} className="flex items-center gap-1 rounded-full bg-surface px-2 py-0.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    <span className="text-[11px] text-foreground/70">{u.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* User footer */}
         <div className="flex items-center gap-2.5 border-t border-border px-4 py-2.5">
           <div className="relative">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-xs font-bold text-white">{(session?.user?.name || "U")[0].toUpperCase()}</div>
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-sidebar-bg bg-green-500" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/20 text-[10px] font-bold text-accent">{(session?.user?.name || "U")[0].toUpperCase()}</div>
+            <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-sidebar-bg bg-green-500" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-medium text-foreground leading-tight">{session?.user?.name || "User"}</p>
-            <p className="text-[11px] text-green-500">Active</p>
+            <p className="truncate text-[12px] font-medium text-foreground leading-tight">{session?.user?.name || "User"}</p>
           </div>
-          <button onClick={() => setShowPasswordChange(true)} className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-hover hover:text-foreground" title="Change password">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          </button>
-          <button onClick={() => signOut()} className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-hover hover:text-foreground" title="Sign out">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          <button onClick={() => setShowPasswordChange(true)} className="flex h-6 w-6 items-center justify-center rounded text-muted/50 transition-colors hover:text-foreground" title="Change password">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </button>
         </div>
       </aside>
@@ -1635,7 +1576,7 @@ export default function Home() {
                         <div className="mb-2">
                           <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Tasks</p>
                           {searchResults.tasks.map((t) => (
-                            <button key={t.id} onClick={() => { if (t.project_name) { const proj = projects.find(p => p.name === t.project_name); if (proj) setActiveProject(proj.id); } setViewMode("board"); setSearchOpen(false); setSearchQuery(""); setSearchResults(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-hover-bg">
+                            <button key={t.id} onClick={() => { if (t.project_name) { const proj = projects.find(p => p.name === t.project_name); if (proj) setActiveProject(proj.id); } setViewMode("projects"); setSearchOpen(false); setSearchQuery(""); setSearchResults(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-hover-bg">
                               <span className="rounded px-1 py-px text-[8px] font-bold uppercase" style={{ backgroundColor: `${PRIORITY_COLORS[t.priority]}20`, color: PRIORITY_COLORS[t.priority] }}>{t.priority}</span>
                               <div className="min-w-0 flex-1">
                                 <p className="text-[12px] font-medium text-foreground truncate">{t.title}</p>
@@ -1649,7 +1590,7 @@ export default function Home() {
                         <div className="mb-2">
                           <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted">Messages</p>
                           {searchResults.messages.map((m) => (
-                            <button key={m.id} onClick={() => { if (m.project_name) { const proj = projects.find(p => p.name === m.project_name); if (proj) setActiveProject(proj.id); } setViewMode("chat"); setSearchOpen(false); setSearchQuery(""); setSearchResults(null); }} className="w-full rounded-lg px-2 py-1.5 text-left hover:bg-hover-bg">
+                            <button key={m.id} onClick={() => { if (m.project_name) { const proj = projects.find(p => p.name === m.project_name); if (proj) setActiveProject(proj.id); } setViewMode("ask"); setSearchOpen(false); setSearchQuery(""); setSearchResults(null); }} className="w-full rounded-lg px-2 py-1.5 text-left hover:bg-hover-bg">
                               <p className="text-[12px] text-foreground/80 truncate">{m.content}</p>
                               <div className="flex items-center gap-2 text-[10px] text-muted">
                                 <span>{m.sender}</span>
@@ -1681,17 +1622,17 @@ export default function Home() {
             </div>
 
             {/* View mode tabs — only for project views */}
-            {(viewMode === "chat" || viewMode === "board") && (
+            {viewMode === "projects" && (
               <div className="flex rounded-md border border-border bg-background">
-                {(["chat", "board"] as const).map((mode) => (
+                {(["messages", "board", "files"] as ProjectTab[]).map((tab, i) => (
                   <button
-                    key={mode}
-                    onClick={() => setViewMode(mode)}
+                    key={tab}
+                    onClick={() => setProjectTab(tab)}
                     className={`px-2.5 py-1 text-[11px] font-medium capitalize transition-colors ${
-                      viewMode === mode ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"
-                    } ${mode === "chat" ? "rounded-l-md" : "rounded-r-md"}`}
+                      projectTab === tab ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"
+                    } ${i === 0 ? "rounded-l-md" : i === 2 ? "rounded-r-md" : ""}`}
                   >
-                    {mode === "chat" ? "Chat" : "Board"}
+                    {tab === "messages" ? "Messages" : tab === "board" ? "Board" : "Files"}
                   </button>
                 ))}
               </div>
@@ -1734,7 +1675,7 @@ export default function Home() {
                 </svg>
               </button>
             )}
-            {(viewMode === "chat" || viewMode === "board") && (
+            {(viewMode === "ask" || viewMode === "projects") && (
               <>
                 <button
                   onClick={() => setSkillsPanelOpen(!skillsPanelOpen)}
@@ -1824,10 +1765,10 @@ export default function Home() {
                     {dashboardData.pendingActions.map((action) => (
                       <div key={action.id} className="flex items-center gap-3 rounded-lg border border-accent/20 bg-accent/5 p-3">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10">
-                          {action.action_type === "email" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00d4a8" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
-                          {action.action_type === "call" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00d4a8" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>}
-                          {action.action_type === "follow_up" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00d4a8" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
-                          {!["email", "call", "follow_up"].includes(action.action_type) && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00d4a8" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>}
+                          {action.action_type === "email" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
+                          {action.action_type === "call" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>}
+                          {action.action_type === "follow_up" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
+                          {!["email", "call", "follow_up"].includes(action.action_type) && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-[13px] font-medium text-foreground">{action.title}</p>
@@ -1871,12 +1812,12 @@ export default function Home() {
                 <div className="rounded-xl border border-border bg-surface/50 p-4">
                   <div className="mb-3 flex items-center justify-between">
                     <h3 className="text-[13px] font-semibold uppercase tracking-wider text-muted">Priority Tasks</h3>
-                    <button onClick={() => setViewMode("board")} className="text-[10px] text-accent hover:underline">View all</button>
+                    <button onClick={() => setViewMode("projects")} className="text-[10px] text-accent hover:underline">View all</button>
                   </div>
                   {dashboardData && dashboardData.tasks.length > 0 ? (
                     <div className="space-y-2">
                       {dashboardData.tasks.slice(0, 6).map((task) => (
-                        <button key={task.id} onClick={() => { if (task.project_name) { const proj = projects.find(p => p.name === task.project_name); if (proj) setActiveProject(proj.id); } setViewMode("board"); }} className="flex w-full items-center gap-2 rounded-lg border border-border/50 bg-background p-2.5 text-left transition-colors hover:border-accent/30">
+                        <button key={task.id} onClick={() => { if (task.project_name) { const proj = projects.find(p => p.name === task.project_name); if (proj) setActiveProject(proj.id); } setViewMode("projects"); }} className="flex w-full items-center gap-2 rounded-lg border border-border/50 bg-background p-2.5 text-left transition-colors hover:border-accent/30">
                           <span className="rounded px-1.5 py-px text-[9px] font-bold uppercase" style={{ backgroundColor: `${PRIORITY_COLORS[task.priority]}20`, color: PRIORITY_COLORS[task.priority] }}>{task.priority}</span>
                           <div className="min-w-0 flex-1">
                             <p className="text-[13px] font-medium text-foreground truncate">{task.title}</p>
@@ -1926,7 +1867,7 @@ export default function Home() {
                       {dashboardData.activity.slice(0, 6).map((entry, i) => (
                         <div key={`${entry.type}-${entry.id}-${i}`} className="flex items-start gap-2">
                           <div className="mt-0.5 shrink-0">
-                            {entry.type === "message" && <div className="flex h-5 w-5 items-center justify-center rounded bg-accent/10"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#00d4a8" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>}
+                            {entry.type === "message" && <div className="flex h-5 w-5 items-center justify-center rounded bg-accent/10"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>}
                             {entry.type === "task" && <div className="flex h-5 w-5 items-center justify-center rounded bg-blue-500/10"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg></div>}
                           </div>
                           <div className="min-w-0 flex-1">
@@ -2052,7 +1993,7 @@ export default function Home() {
                   {!editingContact && selectedContact.phone && <p className="text-[12px] text-muted">{selectedContact.phone}</p>}
 
                   <div className="mt-3 flex gap-2">
-                    <button onClick={() => { setActiveProject("general"); setViewMode("chat"); setInput(`Tell me about ${selectedContact.name} at ${selectedContact.company || "their company"}`); setTimeout(() => inputRef.current?.focus(), 100); }} className="flex-1 rounded-lg border border-accent/30 bg-accent/5 px-3 py-1.5 text-[12px] font-medium text-accent hover:bg-accent/10">
+                    <button onClick={() => { setActiveProject("general"); setViewMode("ask"); setInput(`Tell me about ${selectedContact.name} at ${selectedContact.company || "their company"}`); setTimeout(() => inputRef.current?.focus(), 100); }} className="flex-1 rounded-lg border border-accent/30 bg-accent/5 px-3 py-1.5 text-[12px] font-medium text-accent hover:bg-accent/10">
                       Ask Drew
                     </button>
                     <button disabled className="flex-1 rounded-lg border border-border px-3 py-1.5 text-[12px] font-medium text-muted cursor-not-allowed opacity-50" title="Coming with Telnyx">
@@ -2312,7 +2253,7 @@ export default function Home() {
               {/* KPI Bar */}
               <div className="kpi-grid grid grid-cols-4 gap-3 p-4">
                 {[
-                  { label: "Workers", value: `${officeMetrics.activeWorkers} active`, icon: "users", color: "#00d4a8" },
+                  { label: "Workers", value: `${officeMetrics.activeWorkers} active`, icon: "users", color: "#8b5cf6" },
                   { label: "Tasks", value: `${officeMetrics.tasksCompleted} done`, icon: "check", color: "#22c55e" },
                   { label: "Tokens", value: `$${officeMetrics.estimatedCost}`, icon: "zap", color: "#f59e0b" },
                   { label: "Memory", value: `${officeMetrics.memoryHealth}%`, icon: "brain", color: "#8b5cf6" },
@@ -2339,7 +2280,7 @@ export default function Home() {
                 <h3 className="mb-3 text-[13px] font-semibold uppercase tracking-wider text-muted">Office Floor</h3>
                 <div className="office-grid grid grid-cols-2 gap-3">
                   {[
-                    { id: "drew", name: "Drew", role: "Brain", color: "#00d4a8", avatar: "D", active: officeMetrics.activeWorkers > 0 },
+                    { id: "drew", name: "Drew", role: "Brain", color: "#8b5cf6", avatar: "D", active: officeMetrics.activeWorkers > 0 },
                     { id: "brian", name: "Brian", role: "Builder", color: "#6366f1", avatar: "B", active: false },
                     { id: "lisa", name: "Lisa", role: "Researcher", color: "#f59e0b", avatar: "L", active: false },
                     { id: "vera", name: "Vera", role: "QA", color: "#ec4899", avatar: "V", active: false },
@@ -2409,7 +2350,7 @@ export default function Home() {
                 {/* Health stats */}
                 <div className="grid grid-cols-4 gap-3 mb-4">
                   {[
-                    { label: "Total Entries", value: memoryHealth.total, color: "#00d4a8" },
+                    { label: "Total Entries", value: memoryHealth.total, color: "#8b5cf6" },
                     { label: "Pinned", value: memoryHealth.pinned, color: "#f59e0b" },
                     { label: "Stale %", value: `${memoryHealth.stalePercent}%`, color: "#ef4444" },
                     { label: "Compression", value: `${memoryHealth.compressionRatio}x`, color: "#8b5cf6" },
@@ -2558,7 +2499,7 @@ export default function Home() {
                       <div className="mt-0.5 shrink-0">
                         {entry.type === "message" && (
                           <div className="flex h-6 w-6 items-center justify-center rounded bg-accent/10">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00d4a8" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                           </div>
                         )}
                         {entry.type === "task" && (
@@ -2911,7 +2852,7 @@ export default function Home() {
         )}
 
         {/* ── Board View ── */}
-        {viewMode === "board" && (
+        {viewMode === "projects" && (
           <div className="flex-1 overflow-y-auto p-4">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-[15px] font-bold text-foreground">Task Board</h3>
@@ -3583,21 +3524,30 @@ export default function Home() {
         )}
 
         {/* ── Chat View ── */}
-        {viewMode === "chat" && (
+        {viewMode === "ask" && (
         <>
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 && !typingAgent && (
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center px-4">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10">
-                  <span className="text-2xl font-bold text-accent">D</span>
+            <div className="flex h-full items-center justify-center fade-up">
+              <div className="text-center px-4 max-w-lg">
+                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10 border border-accent/20">
+                  <span className="text-3xl font-bold gradient-text">D</span>
                 </div>
-                <h2 className="text-xl font-bold text-foreground">
-                  {getGreeting()}, Andrew.
+                <h2 className="text-2xl font-bold text-foreground">
+                  {getGreeting()}, {session?.user?.name?.split(" ")[0] || "there"}.
                 </h2>
-                <p className="mt-2 max-w-md text-[14px] text-muted">
-                  I&apos;m Drew, your AI brain for <span className="text-foreground font-medium">{activeInfo.name}</span>. Ask me anything or tell me what to work on.
+                <p className="mt-2 text-[15px] text-muted leading-relaxed">
+                  I&apos;m Drew, your AI assistant. Ask me anything about{" "}
+                  <span className="text-accent font-medium">{activeInfo.name}</span>{" "}
+                  or tell me what to work on.
                 </p>
+                <div className="mt-6 flex flex-wrap justify-center gap-2">
+                  {["What's on my calendar today?", "Summarize this project", "Help me draft an email"].map((q) => (
+                    <button key={q} onClick={() => handleSend(q)} className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px] text-foreground/70 transition-all hover:border-accent/30 hover:bg-surface-hover hover:text-foreground">
+                      {q}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -3684,7 +3634,7 @@ export default function Home() {
                       )}
 
                       {/* Message content */}
-                      <div className="msg-content text-[15px] leading-[1.46] text-foreground/90">
+                      <div className={`msg-content text-[15px] leading-[1.46] text-foreground/90 ${isCodeChannel && !isHuman ? "font-mono text-[13px] leading-[1.6]" : ""}`}>
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                       </div>
 
@@ -3692,7 +3642,7 @@ export default function Home() {
                       {msg.approval_id && (
                         <div className="mt-2 max-w-md rounded-lg border border-accent/30 bg-accent/5 p-3">
                           <div className="flex items-center gap-2">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00d4a8" strokeWidth="2">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2">
                               <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                             </svg>
                             <span className="text-[11px] font-bold uppercase tracking-wider text-accent">Approval Required</span>
@@ -3926,7 +3876,7 @@ export default function Home() {
         </div>{/* end content column */}
 
         {/* ── Skills Panel ── */}
-        {skillsPanelOpen && (viewMode === "chat" || viewMode === "board") && (
+        {skillsPanelOpen && (viewMode === "ask" || viewMode === "projects") && (
           <div className="flex w-[320px] shrink-0 flex-col border-l border-border bg-sidebar-bg">
             <div className="flex h-[49px] items-center justify-between border-b border-border px-4">
               <h3 className="text-[14px] font-bold text-foreground">Skills</h3>
@@ -4363,7 +4313,7 @@ export default function Home() {
       )}
 
       {/* ── Floating Brain Button ── */}
-      {viewMode !== "chat" && (
+      {viewMode !== "ask" && (
         <button
           onClick={() => setBrainOverlayOpen(true)}
           className={`fixed bottom-20 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all bg-accent text-white hover:opacity-90 brain-pulse md:bottom-6`}
@@ -4427,13 +4377,13 @@ export default function Home() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
           <span className="text-[10px] font-medium">Home</span>
         </button>
-        <button onClick={() => { navTo("chat"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "chat" ? "text-accent" : "text-muted"}`}>
+        <button onClick={() => { navTo("ask"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "ask" ? "text-accent" : "text-muted"}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span className="text-[10px] font-medium">Chat</span>
+          <span className="text-[10px] font-medium">Ask</span>
         </button>
-        <button onClick={() => navTo("board")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "board" ? "text-accent" : "text-muted"}`}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
-          <span className="text-[10px] font-medium">Tasks</span>
+        <button onClick={() => navTo("projects")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "projects" ? "text-accent" : "text-muted"}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span className="text-[10px] font-medium">Projects</span>
         </button>
         <button onClick={() => navTo("contacts")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "contacts" ? "text-accent" : "text-muted"}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>

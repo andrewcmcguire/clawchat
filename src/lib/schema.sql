@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS channels (
   is_dm BOOLEAN DEFAULT false,
   dm_user1 TEXT,
   dm_user2 TEXT,
+  memory_summary TEXT,
+  summary_updated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

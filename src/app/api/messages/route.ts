@@ -8,6 +8,24 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const RECENT_MESSAGE_LIMIT = 50;
+const SUMMARY_THRESHOLD = 50;
+
+// Code channel system prompt override
+const CODE_SYSTEM_PROMPT = `You are Drew, operating in Code Mode for Steadybase.
+
+In this channel, you act as an expert software engineer. Your responses should:
+- Be precise and technical
+- Include code snippets with proper syntax highlighting (use fenced code blocks with language tags)
+- Explain architecture decisions when relevant
+- Use terminal-style formatting for commands
+- Be concise — skip pleasantries, go straight to the solution
+
+You still have all your capabilities (task creation, delegation, etc.) but your primary focus is code.
+
+Task Creation:
+[TASK: title | priority: low/medium/high/urgent | status: backlog/todo/in_progress]`;
+
 // Detect task markers in Drew's response and create them on the board
 async function extractAndCreateTasks(content: string, channelId: string): Promise<number> {
   const taskPattern = /\[TASK:\s*(.+?)\s*\|\s*priority:\s*(low|medium|high|urgent)\s*\|\s*status:\s*(backlog|todo|in_progress|review|done)\s*\]/gi;
@@ -67,6 +85,75 @@ function detectApproval(
   return null;
 }
 
+// Summarize older messages and store as channel memory
+async function summarizeAndStore(channelId: string): Promise<string | null> {
+  try {
+    const countResult = await pool.query(
+      "SELECT COUNT(*) as total FROM messages WHERE channel_id = $1",
+      [channelId]
+    );
+    const total = parseInt(countResult.rows[0].total, 10);
+
+    if (total <= SUMMARY_THRESHOLD) return null;
+
+    // Get existing summary
+    const channelResult = await pool.query(
+      "SELECT memory_summary, summary_updated_at FROM channels WHERE id = $1",
+      [channelId]
+    );
+    const existingSummary = channelResult.rows[0]?.memory_summary;
+    const lastSummaryAt = channelResult.rows[0]?.summary_updated_at;
+
+    // Get messages older than the last 50 that haven't been summarized yet
+    const olderMessages = await pool.query(
+      `SELECT sender, sender_type, content, created_at FROM messages
+       WHERE channel_id = $1
+       ${lastSummaryAt ? "AND created_at > $2" : ""}
+       ORDER BY created_at ASC
+       OFFSET 0 LIMIT $${lastSummaryAt ? "3" : "2"}`,
+      lastSummaryAt
+        ? [channelId, lastSummaryAt, Math.max(0, total - RECENT_MESSAGE_LIMIT)]
+        : [channelId, Math.max(0, total - RECENT_MESSAGE_LIMIT)]
+    );
+
+    if (olderMessages.rows.length < 10) return existingSummary; // Not enough new messages to warrant re-summarizing
+
+    // Build conversation text for summarization
+    const conversationText = olderMessages.rows
+      .map((m) => `${m.sender} (${m.sender_type}): ${m.content.substring(0, 500)}`)
+      .join("\n");
+
+    const summaryPrompt = existingSummary
+      ? `Here is the previous conversation summary:\n${existingSummary}\n\nHere are new messages since then:\n${conversationText}\n\nUpdate the summary to include the new information. Keep it concise (max 500 words). Focus on key decisions, action items, important context, and user preferences.`
+      : `Summarize this conversation for future context. Keep it concise (max 500 words). Focus on key decisions, action items, important context, and user preferences.\n\n${conversationText}`;
+
+    const summaryResponse = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 1000,
+      system: "You are a conversation summarizer. Create concise, factual summaries that preserve important context, decisions, and action items.",
+      messages: [{ role: "user", content: summaryPrompt }],
+    });
+
+    let summary = "";
+    for (const block of summaryResponse.content) {
+      if (block.type === "text") summary = block.text;
+    }
+
+    if (summary) {
+      await pool.query(
+        "UPDATE channels SET memory_summary = $1, summary_updated_at = NOW() WHERE id = $2",
+        [summary, channelId]
+      );
+      return summary;
+    }
+
+    return existingSummary;
+  } catch (err) {
+    console.error("Summarization failed:", err);
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const channelId = req.nextUrl.searchParams.get("channel_id") || "general";
 
@@ -106,10 +193,32 @@ export async function POST(req: NextRequest) {
   const agent = agents.drew;
   broadcast({ type: "typing", agent_id: agent.id, agent_name: agent.name });
 
-  // Get recent messages for context
+  // Check channel type for code channel routing
+  let channelType = "project";
+  try {
+    const channelResult = await pool.query(
+      "SELECT project_type FROM channels WHERE id = $1",
+      [channel_id]
+    );
+    if (channelResult.rows[0]?.project_type) {
+      channelType = channelResult.rows[0].project_type;
+    }
+  } catch { /* channel may not exist */ }
+
+  // Get conversation memory summary
+  let memorySummary: string | null = null;
+  try {
+    const summaryResult = await pool.query(
+      "SELECT memory_summary FROM channels WHERE id = $1",
+      [channel_id]
+    );
+    memorySummary = summaryResult.rows[0]?.memory_summary || null;
+  } catch { /* summary column may not exist yet */ }
+
+  // Get recent messages for context (last 50 instead of 20)
   const historyResult = await pool.query(
-    "SELECT sender, sender_type, content FROM messages WHERE channel_id = $1 ORDER BY created_at DESC LIMIT 20",
-    [channel_id]
+    "SELECT sender, sender_type, content FROM messages WHERE channel_id = $1 ORDER BY created_at DESC LIMIT $2",
+    [channel_id, RECENT_MESSAGE_LIMIT]
   );
   const history = historyResult.rows.reverse();
 
@@ -122,8 +231,13 @@ export async function POST(req: NextRequest) {
     messages.shift();
   }
 
-  // Build system prompt with project skills
-  let systemPrompt = agent.systemPrompt;
+  // Build system prompt
+  let systemPrompt = channelType === "code" ? CODE_SYSTEM_PROMPT : agent.systemPrompt;
+
+  // Add memory summary context
+  if (memorySummary) {
+    systemPrompt += `\n\n--- Conversation Memory ---\nThe following is a summary of earlier conversation in this channel that you should reference for context:\n${memorySummary}`;
+  }
 
   // Fetch active skills for this project
   try {
@@ -189,6 +303,12 @@ export async function POST(req: NextRequest) {
         approval_status: approvalData?.status || null,
       },
     });
+
+    // Trigger background summarization if message count is high
+    // (fire and forget — don't block the response)
+    summarizeAndStore(channel_id).catch((err) =>
+      console.error("Background summarization error:", err)
+    );
 
     return NextResponse.json(agentMsg);
   } catch (error: unknown) {

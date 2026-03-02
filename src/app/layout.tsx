@@ -4,13 +4,13 @@ import { ServiceWorkerRegistrar } from "./sw-register";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "SteadyChat",
-  description: "Project-oriented AI operations hub by Steadybase",
+  title: "Steadybase",
+  description: "AI operations hub by Steadybase",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "SteadyChat",
+    title: "Steadybase",
   },
 };
 
@@ -19,7 +19,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#09090b",
+  themeColor: "#0a0a0b",
 };
 
 export default function RootLayout({

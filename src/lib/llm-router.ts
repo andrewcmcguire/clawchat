@@ -68,7 +68,19 @@ export async function routeToLLM(
   const config = await loadProviderConfig(projectId);
 
   if (agentId === "drew") {
-    return callClaudeOpus(systemPrompt, messages, anthropic);
+    try {
+      return await callClaudeOpus(systemPrompt, messages, anthropic);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Opus failed, trying fallback:", msg);
+      // If API key is bad, try Sonnet then CLI
+      try {
+        return await callClaudeSonnet(systemPrompt, messages, anthropic);
+      } catch {
+        console.error("Sonnet also failed, trying CLI...");
+        return await callClaudeCLI(systemPrompt, messages);
+      }
+    }
   }
 
   // Workers: try LM Studio first
