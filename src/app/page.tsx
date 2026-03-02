@@ -60,10 +60,11 @@ interface ProjectTask {
   position: number;
   created_at: string;
   updated_at: string;
+  project_name?: string;
 }
 
-type ViewMode = "dashboard" | "ask" | "projects" | "lab" | "contacts" | "calendar" | "files" | "admin" | "settings" | "office";
-type ProjectTab = "overview" | "list" | "board" | "timeline" | "messages" | "files";
+type ViewMode = "dashboard" | "inbox" | "ask" | "projects" | "lab" | "contacts" | "calendar" | "files" | "activity" | "finance" | "admin" | "settings" | "office";
+type ProjectTab = "overview" | "list" | "board" | "timeline" | "calendar" | "dashboard" | "messages" | "files";
 
 interface Contact { id: number; name: string; email: string | null; phone: string | null; company: string | null; role: string | null; linkedin_url: string | null; channels: Record<string, boolean>; notes: string | null; last_contacted_at: string | null; }
 interface ContactInteraction { id: number; type: string; summary: string; transcript_id: number | null; initiated_by: string; created_at: string; }
@@ -337,10 +338,26 @@ export default function Home() {
   // Presence
   const [onlineUsers, setOnlineUsers] = useState<{ email: string; name: string }[]>([]);
 
-  // Close sidebar on mobile when navigating
-  function navTo(mode: ViewMode) {
+  // State for sidebar sections
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({ dms: false, channels: false });
+  const [inboxTasks, setInboxTasks] = useState<(ProjectTask & { project_name?: string })[]>([]);
+  const [activityFeedAll, setActivityFeedAll] = useState<any[]>([]);
+  const [financeData, setFinanceData] = useState<any>(null);
+  const [activityViewFilter, setActivityViewFilter] = useState<"all" | "mentions" | "dms">("all");
+  const [inboxFilter, setInboxFilter] = useState<"all" | "critical" | "today" | "later">("all");
+
+  // Close sidebar on mobile when navigating + hash routing
+  function navTo(mode: ViewMode, extra?: string) {
     setViewMode(mode);
-    if (typeof window !== "undefined" && window.innerWidth < 768) setSidebarOpen(false);
+    if (typeof window !== "undefined") {
+      window.location.hash = extra ? `/${mode}/${extra}` : `/${mode}`;
+      if (window.innerWidth < 768) setSidebarOpen(false);
+    }
+  }
+
+  function toggleSidebarSection(key: string) {
+    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
   }
 
   // ─── Keyboard Shortcuts ────────────────────────────────────────
@@ -368,6 +385,29 @@ export default function Home() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [searchOpen, showAddEvent, showAddContact, editingSkill, showAddSkill]);
+
+  // ─── Hash-based URL Routing ─────────────────────────────────────
+  useEffect(() => {
+    function handleHash() {
+      const hash = window.location.hash.replace(/^#\/?/, "");
+      if (!hash) return;
+      const parts = hash.split("/");
+      const mode = parts[0] as ViewMode;
+      const validModes: ViewMode[] = ["dashboard", "inbox", "ask", "projects", "lab", "contacts", "calendar", "files", "activity", "finance", "admin", "settings", "office"];
+      if (validModes.includes(mode)) {
+        setViewMode(mode);
+        if (parts[1] && (mode === "ask" || mode === "projects")) {
+          // Select specific project by slug
+          const slug = parts[1];
+          const proj = projects.find(p => p.name.toLowerCase().replace(/\s+/g, "-") === slug || p.id.toString() === slug);
+          if (proj) setActiveProject(proj.id);
+        }
+      }
+    }
+    handleHash(); // On mount
+    window.addEventListener("hashchange", handleHash);
+    return () => window.removeEventListener("hashchange", handleHash);
+  }, [projects]);
 
   // ─── Data Loading ────────────────────────────────────────────────
   const loadMessages = useCallback(async (projectId: string) => {
@@ -1221,76 +1261,29 @@ export default function Home() {
         />
       )}
 
-      {/* ── Icon Bar (Primary Sidebar) ── */}
-      <div className="icon-bar hidden md:flex w-[64px] flex-col items-center border-r border-border bg-icon-bar-bg py-3 shrink-0">
-        {/* Logo */}
-        <button onClick={() => navTo("dashboard")} className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/15 transition-all hover:bg-accent/25" title="Steadybase">
-          <span className="text-lg font-bold gradient-text">S</span>
-        </button>
-
-        {/* Nav icons */}
-        <div className="flex flex-col items-center gap-1">
-          <button onClick={() => navTo("dashboard")} className={`icon-btn ${viewMode === "dashboard" ? "active" : ""}`} title="Dashboard">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          </button>
-          <button onClick={() => navTo("ask")} className={`icon-btn ${viewMode === "ask" ? "active" : ""}`} title="Ask Drew">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          </button>
-          <button onClick={() => navTo("lab")} className={`icon-btn ${viewMode === "lab" ? "active" : ""}`} title="Lab">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 3h6v6l3 9H6l3-9V3z"/><line x1="8" y1="3" x2="16" y2="3"/></svg>
-          </button>
-          <button onClick={() => navTo("projects")} className={`icon-btn ${viewMode === "projects" ? "active" : ""}`} title="Projects">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          </button>
-          <button onClick={() => navTo("calendar")} className={`icon-btn ${viewMode === "calendar" ? "active" : ""}`} title="Calendar">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          </button>
-          <button onClick={() => navTo("files")} className={`icon-btn ${viewMode === "files" ? "active" : ""}`} title="Files">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          </button>
-          <button onClick={() => navTo("contacts")} className={`icon-btn ${viewMode === "contacts" ? "active" : ""}`} title="Contacts">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-          </button>
-        </div>
-
-        {/* Bottom section */}
-        <div className="mt-auto flex flex-col items-center gap-1">
-          {session?.user?.role === "admin" && (
-            <button onClick={() => navTo("admin")} className={`icon-btn ${viewMode === "admin" ? "active" : ""}`} title="Admin">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            </button>
-          )}
-          <button onClick={() => navTo("settings")} className={`icon-btn ${viewMode === "settings" ? "active" : ""}`} title="Settings">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </button>
-          <div className="mt-2 flex h-8 w-8 items-center justify-center rounded-full bg-accent/20 text-[11px] font-bold text-accent cursor-pointer" onClick={() => signOut()} title={`${session?.user?.email} — Sign out`}>
-            {session?.user?.name?.[0]?.toUpperCase() || session?.user?.email?.[0]?.toUpperCase() || "U"}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Secondary Sidebar ── */}
-      <aside className={`flex flex-col border-r border-border bg-sidebar-bg transition-all duration-200 ${
+      {/* ── Single Sidebar (Slack-style) ── */}
+      <aside className={`flex flex-col border-r border-border bg-sidebar-bg transition-all duration-200 shrink-0 ${
         sidebarOpen
-          ? "fixed inset-y-0 left-0 z-50 w-[260px] md:relative md:z-auto md:w-[260px]"
-          : "w-0 overflow-hidden md:w-[260px]"
-      }`}>
+          ? "fixed inset-y-0 left-0 z-50 w-[260px] md:relative md:z-auto"
+          : "w-0 overflow-hidden"
+      } ${sidebarCollapsed ? "md:w-[60px]" : "md:w-[260px]"}`}>
         {/* Workspace header */}
-        <div className="relative flex h-[49px] items-center gap-2.5 border-b border-border px-4">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/15">
-            <span className="text-xs font-bold text-accent">S</span>
-          </div>
-          <button onClick={() => setShowWorkspaceSwitcher(!showWorkspaceSwitcher)} className="min-w-0 flex-1 text-left">
-            <h1 className="truncate text-[15px] font-bold text-foreground leading-tight">{activeWorkspaceInfo.name}</h1>
+        <div className="relative flex h-[49px] items-center gap-2 border-b border-border px-3">
+          <button onClick={() => navTo("dashboard")} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 transition-all hover:bg-accent/25" title="Steadybase Home">
+            <span className="text-sm font-bold gradient-text">S</span>
           </button>
-          <button
-            onClick={() => setShowWorkspaceSwitcher(!showWorkspaceSwitcher)}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-            title="Switch workspace"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-          {showWorkspaceSwitcher && (
+          {!sidebarCollapsed && (
+            <>
+              <button onClick={() => setShowWorkspaceSwitcher(!showWorkspaceSwitcher)} className="min-w-0 flex-1 text-left">
+                <p className="truncate text-[14px] font-bold text-foreground leading-tight">steadybase</p>
+                <p className="truncate text-[11px] text-muted leading-tight">{activeWorkspaceInfo.name}</p>
+              </button>
+              <button onClick={() => setShowNewProject(true)} className="flex h-6 w-6 items-center justify-center rounded text-muted hover:text-foreground hover:bg-hover-bg" title="New project">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+            </>
+          )}
+          {showWorkspaceSwitcher && !sidebarCollapsed && (
             <div className="absolute left-2 right-2 top-[48px] z-50 rounded-lg border border-border bg-surface shadow-xl">
               {workspaces.map((ws) => (
                 <button key={ws.id} onClick={() => { setActiveWorkspace(ws.id); setShowWorkspaceSwitcher(false); }} className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-hover-bg ${ws.id === activeWorkspace ? "text-accent font-medium" : "text-foreground"}`}>
@@ -1299,149 +1292,239 @@ export default function Home() {
                   {ws.id === activeWorkspace && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="ml-auto text-accent"><polyline points="20 6 9 17 4 12"/></svg>}
                 </button>
               ))}
-              <div className="border-t border-border">
-                <button className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-muted hover:bg-hover-bg hover:text-foreground">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  Create Workspace
-                </button>
-              </div>
             </div>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto py-3">
-          {/* Channels section */}
-          <div className="mb-4">
-            <div className="mb-0.5 flex items-center justify-between px-4">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Channels</span>
-              <button onClick={() => setShowNewProject(true)} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New channel">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <div className="flex-1 overflow-y-auto py-2">
+          {/* GLOBAL section */}
+          {!sidebarCollapsed && <p className="px-4 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">Global</p>}
+          {[
+            { mode: "dashboard" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>, label: "Home" },
+            { mode: "inbox" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>, label: "Inbox", badge: inboxTasks.filter(t => t.status !== "done").length || undefined },
+            { mode: "calendar" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>, label: "Calendar" },
+            { mode: "contacts" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>, label: "Contacts" },
+            { mode: "activity" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>, label: "Activity" },
+            { mode: "finance" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>, label: "Finance" },
+          ].map((item) => (
+            <button
+              key={item.mode}
+              onClick={() => navTo(item.mode)}
+              className={`flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] transition-colors ${
+                viewMode === item.mode ? "bg-accent/10 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"
+              } ${sidebarCollapsed ? "justify-center px-0" : ""}`}
+              title={sidebarCollapsed ? item.label : undefined}
+            >
+              <span className={viewMode === item.mode ? "text-accent" : "text-muted"}>{item.icon}</span>
+              {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+              {!sidebarCollapsed && item.badge && item.badge > 0 && (
+                <span className="ml-auto rounded-full bg-accent/20 px-1.5 py-px text-[10px] font-bold text-accent">{item.badge}</span>
+              )}
+            </button>
+          ))}
+
+          {/* WORKSPACE section */}
+          {!sidebarCollapsed && <p className="px-4 mt-4 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">Workspace</p>}
+          {[
+            { mode: "ask" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>, label: "Ask" },
+          ].map((item) => (
+            <button
+              key={item.mode}
+              onClick={() => navTo(item.mode)}
+              className={`flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] transition-colors ${
+                viewMode === item.mode ? "bg-accent/10 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"
+              } ${sidebarCollapsed ? "justify-center px-0" : ""}`}
+            >
+              <span className={viewMode === item.mode ? "text-accent" : "text-muted"}>{item.icon}</span>
+              {!sidebarCollapsed && <span>{item.label}</span>}
+            </button>
+          ))}
+
+          {/* DMs expandable */}
+          {!sidebarCollapsed && (
+            <div>
+              <button onClick={() => toggleSidebarSection("dms")} className="flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] text-foreground/70 hover:bg-hover-bg hover:text-foreground">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-muted"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <span>DMs</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`ml-auto text-muted transition-transform ${expandedSections.dms ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6"/></svg>
+                <button onClick={(e) => { e.stopPropagation(); setShowNewDM(true); loadDMUsers(); }} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New DM">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
               </button>
-            </div>
-            {projects.filter((p) => !p.is_dm).map((proj) => (
-              <div key={proj.id} className="group flex items-center">
-                {editingProject === proj.id ? (
-                  <div className="flex flex-1 items-center gap-1 px-4 py-0.5">
-                    <input type="text" value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && editProjectName.trim()) renameProject(proj.id, editProjectName.trim()); if (e.key === "Escape") setEditingProject(null); }} className="min-w-0 flex-1 rounded border border-accent/50 bg-background px-2 py-0.5 text-[13px] text-foreground outline-none" autoFocus/>
-                    <button onClick={() => { if (editProjectName.trim()) renameProject(proj.id, editProjectName.trim()); }} className="text-[10px] text-accent">Save</button>
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => switchProject(proj.id)}
-                      className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-4 py-[6px] text-left text-[14px] transition-colors ${
-                        activeProject === proj.id
-                          ? "bg-accent/10 font-medium text-accent"
-                          : "text-foreground/60 hover:bg-hover-bg hover:text-foreground/90"
-                      }`}
-                    >
-                      <span className="text-muted/50 text-[13px]">#</span>
-                      <span className="truncate">{proj.name}</span>
-                    </button>
-                    <div className="flex shrink-0 gap-0.5 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={(e) => { e.stopPropagation(); setEditingProject(proj.id); setEditProjectName(proj.name); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-foreground" title="Rename">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                      </button>
-                      {proj.id !== "general" && (
-                        <button onClick={(e) => { e.stopPropagation(); deleteProject(proj.id); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-red-400" title="Delete">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              {expandedSections.dms && (
+                <>
+                  {showNewDM && (
+                    <div className="mx-4 mb-2 rounded-lg border border-border bg-surface p-2">
+                      <p className="text-[11px] text-muted mb-1.5">Select a user</p>
+                      {dmUsers.filter((u) => u.email !== session?.user?.email).map((u) => (
+                        <button key={u.id} onClick={async () => {
+                          try {
+                            const res = await fetch("/api/dm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: u.email }) });
+                            if (res.ok) { const dm = await res.json(); switchProject(dm.id); loadProjects(); }
+                          } catch {}
+                          setShowNewDM(false);
+                        }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-hover-bg">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/20 text-[10px] font-bold text-accent">{u.name[0]?.toUpperCase()}</div>
+                          {u.name}
                         </button>
+                      ))}
+                      {dmUsers.filter((u) => u.email !== session?.user?.email).length === 0 && (
+                        <p className="text-[11px] text-muted/60 py-2 text-center">No other users yet</p>
                       )}
+                      <button onClick={() => setShowNewDM(false)} className="mt-1 w-full text-center text-[11px] text-muted hover:text-foreground">Cancel</button>
                     </div>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Direct Messages section */}
-          <div className="mb-4">
-            <div className="mb-0.5 flex items-center justify-between px-4">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Direct Messages</span>
-              <button onClick={() => { setShowNewDM(true); loadDMUsers(); }} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New DM">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              </button>
-            </div>
-            {showNewDM && (
-              <div className="mx-4 mb-2 rounded-lg border border-border bg-surface p-2">
-                <p className="text-[11px] text-muted mb-1.5">Select a user</p>
-                {dmUsers.filter((u) => u.email !== session?.user?.email).map((u) => (
-                  <button key={u.id} onClick={async () => {
-                    try {
-                      const res = await fetch("/api/dm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: u.email }) });
-                      if (res.ok) {
-                        const dm = await res.json();
-                        switchProject(dm.id);
-                        loadProjects();
-                      }
-                    } catch {}
-                    setShowNewDM(false);
-                  }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-hover-bg">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/20 text-[10px] font-bold text-accent">{u.name[0]?.toUpperCase()}</div>
-                    {u.name}
-                  </button>
-                ))}
-                {dmUsers.filter((u) => u.email !== session?.user?.email).length === 0 && (
-                  <p className="text-[11px] text-muted/60 py-2 text-center">No other users yet. Invite from Admin.</p>
-                )}
-                <button onClick={() => setShowNewDM(false)} className="mt-1 w-full text-center text-[11px] text-muted hover:text-foreground">Cancel</button>
-              </div>
-            )}
-            {projects.filter((p) => p.is_dm).map((dm) => {
-              const otherEmail = dm.dm_user1 === session?.user?.email ? dm.dm_user2 : dm.dm_user1;
-              const isOnline = onlineUsers.some((u) => u.email === otherEmail);
-              return (
-                <button key={dm.id} onClick={() => switchProject(dm.id)}
-                  className={`flex w-full items-center gap-2 rounded-md px-4 py-[6px] text-left text-[14px] transition-colors ${
-                    activeProject === dm.id ? "bg-accent/10 font-medium text-accent" : "text-foreground/60 hover:bg-hover-bg"
-                  }`}>
-                  <div className="relative">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/20 text-[9px] font-bold text-accent">{dm.name[0]?.toUpperCase()}</div>
-                    {isOnline && <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-sidebar-bg bg-green-500" />}
-                  </div>
-                  <span className="truncate">{dm.name}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Online now */}
-          {onlineUsers.length > 0 && (
-            <div className="border-t border-border pt-3 px-4">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">Online</span>
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {onlineUsers.map((u) => (
-                  <div key={u.email} className="flex items-center gap-1 rounded-full bg-surface px-2 py-0.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                    <span className="text-[11px] text-foreground/70">{u.name}</span>
-                  </div>
-                ))}
-              </div>
+                  )}
+                  {projects.filter((p) => p.is_dm).map((dm) => {
+                    const otherEmail = dm.dm_user1 === session?.user?.email ? dm.dm_user2 : dm.dm_user1;
+                    const isOnline = onlineUsers.some((u) => u.email === otherEmail);
+                    return (
+                      <button key={dm.id} onClick={() => { switchProject(dm.id); navTo("ask"); }}
+                        className={`flex w-full items-center gap-2 rounded-md px-6 py-[5px] text-left text-[13px] transition-colors ${
+                          activeProject === dm.id && viewMode === "ask" ? "bg-accent/10 font-medium text-accent" : "text-foreground/60 hover:bg-hover-bg"
+                        }`}>
+                        <div className="relative">
+                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent/20 text-[8px] font-bold text-accent">{dm.name[0]?.toUpperCase()}</div>
+                          {isOnline && <span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-sidebar-bg bg-green-500" />}
+                        </div>
+                        <span className="truncate">{dm.name}</span>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
             </div>
           )}
+
+          {/* Channels expandable */}
+          {!sidebarCollapsed && (
+            <div>
+              <button onClick={() => toggleSidebarSection("channels")} className="flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] text-foreground/70 hover:bg-hover-bg hover:text-foreground">
+                <span className="text-muted text-[16px] font-medium">#</span>
+                <span>Channels</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`ml-auto text-muted transition-transform ${expandedSections.channels ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6"/></svg>
+                <button onClick={(e) => { e.stopPropagation(); setShowNewProject(true); }} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New channel">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+              </button>
+              {expandedSections.channels && projects.filter((p) => !p.is_dm).map((proj) => (
+                <div key={proj.id} className="group flex items-center">
+                  {editingProject === proj.id ? (
+                    <div className="flex flex-1 items-center gap-1 px-6 py-0.5">
+                      <input type="text" value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && editProjectName.trim()) renameProject(proj.id, editProjectName.trim()); if (e.key === "Escape") setEditingProject(null); }} className="min-w-0 flex-1 rounded border border-accent/50 bg-background px-2 py-0.5 text-[13px] text-foreground outline-none" autoFocus/>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { switchProject(proj.id); navTo("ask"); }}
+                        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-6 py-[5px] text-left text-[13px] transition-colors ${
+                          activeProject === proj.id && viewMode === "ask"
+                            ? "bg-accent/10 font-medium text-accent"
+                            : "text-foreground/60 hover:bg-hover-bg hover:text-foreground/90"
+                        }`}
+                      >
+                        <span className="text-muted/50 text-[12px]">#</span>
+                        <span className="truncate">{proj.name}</span>
+                      </button>
+                      <div className="flex shrink-0 gap-0.5 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => { e.stopPropagation(); setEditingProject(proj.id); setEditProjectName(proj.name); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-foreground" title="Rename">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        {proj.id !== "general" && (
+                          <button onClick={(e) => { e.stopPropagation(); deleteProject(proj.id); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-red-400" title="Delete">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Projects nav */}
+          {[
+            { mode: "projects" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>, label: "Projects" },
+          ].map((item) => (
+            <button
+              key={item.mode}
+              onClick={() => navTo(item.mode)}
+              className={`flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] transition-colors ${
+                viewMode === item.mode ? "bg-accent/10 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"
+              } ${sidebarCollapsed ? "justify-center px-0" : ""}`}
+            >
+              <span className={viewMode === item.mode ? "text-accent" : "text-muted"}>{item.icon}</span>
+              {!sidebarCollapsed && <span>{item.label}</span>}
+            </button>
+          ))}
+
+          {/* Extra nav */}
+          {!sidebarCollapsed && <div className="my-2 mx-4 border-t border-border/50" />}
+          {[
+            { mode: "office" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>, label: "Office" },
+            { mode: "lab" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M9 3h6v6l3 9H6l3-9V3z"/><line x1="8" y1="3" x2="16" y2="3"/></svg>, label: "Lab" },
+            { mode: "files" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>, label: "Files" },
+          ].map((item) => (
+            <button
+              key={item.mode}
+              onClick={() => navTo(item.mode)}
+              className={`flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] transition-colors ${
+                viewMode === item.mode ? "bg-accent/10 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"
+              } ${sidebarCollapsed ? "justify-center px-0" : ""}`}
+              title={sidebarCollapsed ? item.label : undefined}
+            >
+              <span className={viewMode === item.mode ? "text-accent" : "text-muted"}>{item.icon}</span>
+              {!sidebarCollapsed && <span>{item.label}</span>}
+            </button>
+          ))}
         </div>
 
-        {/* User footer */}
-        <div className="flex items-center gap-2.5 border-t border-border px-4 py-2.5">
-          <div className="relative">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/20 text-[10px] font-bold text-accent">{(session?.user?.name || "U")[0].toUpperCase()}</div>
-            <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-sidebar-bg bg-green-500" />
+        {/* Bottom: Customize + User */}
+        <div className="border-t border-border">
+          {!sidebarCollapsed && (
+            <>
+              <button onClick={() => navTo("settings")} className={`flex w-full items-center gap-2.5 px-4 py-[7px] text-[14px] transition-colors ${viewMode === "settings" ? "bg-accent/10 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"}`}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={viewMode === "settings" ? "text-accent" : "text-muted"}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Customize</span>
+              </button>
+              {session?.user?.role === "admin" && (
+                <button onClick={() => navTo("admin")} className={`flex w-full items-center gap-2.5 px-4 py-[7px] text-[14px] transition-colors ${viewMode === "admin" ? "bg-accent/10 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"}`}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={viewMode === "admin" ? "text-accent" : "text-muted"}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  <span>Admin</span>
+                </button>
+              )}
+            </>
+          )}
+          <div className="flex items-center gap-2.5 px-3 py-2.5">
+            <div className="relative">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/20 text-[10px] font-bold text-accent">{(session?.user?.name || "U")[0].toUpperCase()}</div>
+              <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border-2 border-sidebar-bg bg-green-500" />
+            </div>
+            {!sidebarCollapsed && (
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[12px] font-medium text-foreground leading-tight">{session?.user?.name || "User"}</p>
+                </div>
+                <button onClick={() => setSidebarCollapsed(true)} className="flex h-6 w-6 items-center justify-center rounded text-muted/50 transition-colors hover:text-foreground" title="Collapse sidebar">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+              </>
+            )}
+            {sidebarCollapsed && (
+              <button onClick={() => setSidebarCollapsed(false)} className="flex h-6 w-6 items-center justify-center rounded text-muted/50 transition-colors hover:text-foreground" title="Expand sidebar">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+            )}
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[12px] font-medium text-foreground leading-tight">{session?.user?.name || "User"}</p>
-          </div>
-          <button onClick={() => setShowPasswordChange(true)} className="flex h-6 w-6 items-center justify-center rounded text-muted/50 transition-colors hover:text-foreground" title="Change password">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          </button>
         </div>
       </aside>
 
       {/* ── Main ── */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Project header */}
+        {/* Header */}
         <header className="flex h-[49px] items-center gap-3 border-b border-border px-4">
           <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
+            onClick={() => { if (window.innerWidth < 768) setSidebarOpen(!sidebarOpen); else setSidebarCollapsed(!sidebarCollapsed); }}
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover-bg hover:text-foreground"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1449,70 +1532,9 @@ export default function Home() {
             </svg>
           </button>
           <div className="min-w-0 flex-1">
-            {viewMode === "dashboard" ? (
-              <div className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-                </svg>
-                <h2 className="text-[15px] font-bold text-foreground">Dashboard</h2>
-                <span className="text-[12px] text-muted">{new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}</span>
-              </div>
-            ) : viewMode === "contacts" ? (
-              <div className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                </svg>
-                <h2 className="text-[15px] font-bold text-foreground">Contacts</h2>
-              </div>
-            ) : viewMode === "calendar" ? (
-              <div className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-                </svg>
-                <h2 className="text-[15px] font-bold text-foreground">Calendar</h2>
-                <span className="text-[12px] text-muted">{calendarWeekStart.toLocaleDateString([], { month: "short", day: "numeric" })} - {new Date(calendarWeekStart.getTime() + 6 * 86400000).toLocaleDateString([], { month: "short", day: "numeric" })}</span>
-              </div>
-            ) : viewMode === "office" ? (
-              <div className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                  <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-                </svg>
-                <h2 className="text-[15px] font-bold text-foreground">The Office</h2>
-              </div>
-            ) : viewMode === "lab" ? (
-              <div className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                  <path d="M9 3h6v6l3 9H6l3-9V3z"/><line x1="8" y1="3" x2="16" y2="3"/>
-                </svg>
-                <h2 className="text-[15px] font-bold text-foreground">The Lab</h2>
-              </div>
-            ) : viewMode === "files" ? (
-              <div className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                </svg>
-                <h2 className="text-[15px] font-bold text-foreground">Files</h2>
-              </div>
-            ) : viewMode === "admin" ? (
-              <div className="flex items-center gap-2">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-                <h2 className="text-[15px] font-bold text-foreground">Admin</h2>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
-                  <h2 className="text-[15px] font-bold text-foreground">{activeInfo.name}</h2>
-                </div>
-                {activeInfo.description && (
-                  <p className="truncate text-[12px] text-muted">{activeInfo.description}</p>
-                )}
-              </>
-            )}
+            <h2 className="text-[15px] font-bold text-foreground">
+              {viewMode === "dashboard" ? "Home" : viewMode === "inbox" ? "Inbox" : viewMode === "ask" ? activeInfo.name : viewMode === "projects" ? "Projects" : viewMode === "contacts" ? "Contacts" : viewMode === "calendar" ? "Calendar" : viewMode === "activity" ? "Activity" : viewMode === "finance" ? "Finance" : viewMode === "office" ? "The Office" : viewMode === "lab" ? "The Lab" : viewMode === "files" ? "Files" : viewMode === "admin" ? "Admin" : viewMode === "settings" ? "Settings" : activeInfo.name}
+            </h2>
           </div>
           <div className="flex items-center gap-2">
             {/* Voice indicator */}
@@ -1701,185 +1723,187 @@ export default function Home() {
 
         {/* ── Dashboard View ── */}
         {viewMode === "dashboard" && (
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="mx-auto max-w-4xl">
-              {/* Greeting */}
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-foreground">{getGreeting()}, Andrew.</h2>
-                {dashboardData && (
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
+            <div className="mx-auto max-w-6xl">
+              {/* Greeting + Ask button */}
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">{getGreeting()}, {session?.user?.name?.split(" ")[0] || "there"}.</h2>
                   <p className="mt-1 text-[14px] text-muted">
-                    {dashboardData.summary.meetingCount} meeting{dashboardData.summary.meetingCount !== 1 ? "s" : ""}, {dashboardData.summary.taskCount} task{dashboardData.summary.taskCount !== 1 ? "s" : ""}, {dashboardData.summary.followUpCount} follow-up{dashboardData.summary.followUpCount !== 1 ? "s" : ""} today
+                    {new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })} &mdash; Here&apos;s what I can help you with today
                   </p>
-                )}
-              </div>
-
-              {/* Voice bar */}
-              <div className="mb-6 rounded-xl border border-border bg-surface/50 p-4">
-                <div className="flex items-center gap-3">
-                  <button
-                    onMouseDown={startRecording}
-                    onMouseUp={stopRecording}
-                    onMouseLeave={() => recording && stopRecording()}
-                    onTouchStart={startRecording}
-                    onTouchEnd={stopRecording}
-                    disabled={sending || transcribing}
-                    className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition-all ${
-                      recording ? "bg-red-500 text-white scale-110" : transcribing ? "bg-accent/20 text-accent" : "bg-accent/10 text-accent hover:bg-accent/20"
-                    }`}
-                    title="Hold to speak"
-                  >
-                    {transcribing ? (
-                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-accent/30 border-t-accent"/>
-                    ) : (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                        <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-                      </svg>
-                    )}
-                  </button>
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") { handleSend(); } }}
-                      placeholder={recording ? "Listening..." : transcribing ? "Transcribing..." : "Ask Drew anything..."}
-                      disabled={sending || recording || transcribing}
-                      className="w-full bg-transparent text-[15px] text-foreground placeholder-muted outline-none"
-                    />
-                  </div>
-                  {input.trim() && (
-                    <button onClick={() => handleSend()} className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white hover:opacity-90">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    </button>
-                  )}
                 </div>
-                {recording && <p className="mt-2 flex items-center gap-1.5 text-[12px] text-red-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500"/>Recording...</p>}
+                <button onClick={() => navTo("ask")} className="hidden md:flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-[13px] font-medium text-white hover:opacity-90 transition-opacity">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  Ask Assistant
+                </button>
               </div>
 
-              {/* Pending Actions */}
+              {/* KPI Cards Row */}
+              <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">LLM Costs</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">$0.00</p>
+                  <p className="text-[11px] text-muted">today</p>
+                </div>
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Projects</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{projects.filter(p => !p.is_dm).length}</p>
+                  <p className="text-[11px] text-muted">active</p>
+                </div>
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Workers</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">0</p>
+                  <p className="text-[11px] text-muted">running</p>
+                </div>
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Due</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">{dashboardData?.summary?.taskCount || 0}</p>
+                  <p className="text-[11px] text-muted">tasks today</p>
+                </div>
+              </div>
+
+              {/* Action Cards */}
               {dashboardData && dashboardData.pendingActions.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="mb-3 text-[13px] font-semibold uppercase tracking-wider text-muted">Drew Wants To</h3>
-                  <div className="space-y-2">
-                    {dashboardData.pendingActions.map((action) => (
-                      <div key={action.id} className="flex items-center gap-3 rounded-lg border border-accent/20 bg-accent/5 p-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10">
-                          {action.action_type === "email" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>}
-                          {action.action_type === "call" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>}
-                          {action.action_type === "follow_up" && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>}
-                          {!["email", "call", "follow_up"].includes(action.action_type) && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[13px] font-medium text-foreground">{action.title}</p>
-                          {action.description && <p className="mt-0.5 text-[12px] text-muted line-clamp-1">{action.description}</p>}
-                        </div>
-                        <div className="flex gap-1.5">
-                          <button onClick={() => handleActionApproval(action.id, "approved")} className="rounded-md bg-green-600 px-3 py-1 text-[12px] font-medium text-white hover:bg-green-700">Approve</button>
-                          <button onClick={() => handleActionApproval(action.id, "cancelled")} className="rounded-md border border-border px-3 py-1 text-[12px] font-medium text-muted hover:text-foreground">Decline</button>
-                        </div>
+                <div className="mb-6 flex gap-3 overflow-x-auto pb-1">
+                  {dashboardData.pendingActions.slice(0, 3).map((action) => (
+                    <button key={action.id} onClick={() => handleActionApproval(action.id, "approved")} className="flex min-w-[220px] items-center gap-3 rounded-xl border border-accent/20 bg-accent/5 p-4 text-left transition-colors hover:bg-accent/10">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                       </div>
-                    ))}
-                  </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-medium text-foreground">{action.title}</p>
+                        {action.description && <p className="mt-0.5 text-[11px] text-muted line-clamp-1">{action.description}</p>}
+                      </div>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent shrink-0"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                  ))}
                 </div>
               )}
 
-              <div className="dashboard-grid grid grid-cols-2 gap-4">
-                {/* Today's Schedule */}
-                <div className="rounded-xl border border-border bg-surface/50 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-[13px] font-semibold uppercase tracking-wider text-muted">Today&apos;s Schedule</h3>
-                    <button onClick={() => setViewMode("calendar")} className="text-[10px] text-accent hover:underline">View all</button>
-                  </div>
-                  {dashboardData && dashboardData.events.length > 0 ? (
-                    <div className="space-y-2">
-                      {dashboardData.events.map((ev) => (
-                        <button key={ev.id} onClick={() => { setViewMode("calendar"); setCalendarWeekStart(getMonday(new Date(ev.start_time))); setSelectedEvent(ev); }} className="flex w-full items-center gap-2 rounded-lg border border-border/50 bg-background p-2.5 text-left transition-colors hover:border-accent/30">
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: EVENT_TYPE_COLORS[ev.event_type] || "#6366f1" }}/>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[13px] font-medium text-foreground truncate">{ev.title}</p>
-                            <p className="text-[11px] text-muted">{formatTimeRange(ev.start_time, ev.end_time)}{ev.location ? ` - ${ev.location}` : ""}</p>
-                          </div>
+              {/* Two-column: Tasks | Right Panel */}
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+                {/* Left: Task Sections */}
+                <div className="space-y-4">
+                  {/* Task sections */}
+                  {[
+                    { label: "CRITICAL", filter: (t: any) => t.priority === "urgent", color: "#ef4444" },
+                    { label: "INBOX", filter: (t: any) => t.status === "backlog", color: "#8b5cf6" },
+                    { label: "TODAY", filter: (t: any) => t.status === "todo" || t.status === "in_progress", color: "#3b82f6" },
+                    { label: "LATER", filter: (t: any) => t.status === "backlog" && t.priority !== "urgent", color: "#71717a" },
+                  ].map((section) => {
+                    const sectionTasks = dashboardData?.tasks?.filter(section.filter) || [];
+                    return (
+                      <div key={section.label}>
+                        <button className="flex w-full items-center gap-2 py-1.5 text-left">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted"><polyline points="6 9 12 15 18 9"/></svg>
+                          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: section.color }}>{section.label}</span>
+                          <span className="rounded-full bg-surface px-1.5 py-px text-[10px] font-medium text-muted">{sectionTasks.length}</span>
                         </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="py-4 text-center text-[12px] text-muted">No events today</p>
-                  )}
+                        {sectionTasks.length > 0 && (
+                          <div className="ml-4 space-y-1">
+                            {sectionTasks.slice(0, 5).map((task) => (
+                              <button key={task.id} onClick={() => { if (task.project_name) { const proj = projects.find(p => p.name === task.project_name); if (proj) setActiveProject(proj.id); } navTo("projects"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-hover-bg">
+                                <span className="h-3 w-3 shrink-0 rounded border border-border" />
+                                <span className="min-w-0 flex-1 text-[13px] text-foreground truncate">{task.title}</span>
+                                {task.project_name && <span className="text-[10px] text-accent shrink-0">{task.project_name}</span>}
+                                {task.due_date && <span className="text-[10px] text-muted shrink-0">{formatDateShort(task.due_date)}</span>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Add task */}
+                  <button onClick={() => { setShowAddTask(true); }} className="flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-muted transition-colors hover:bg-hover-bg hover:text-foreground">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add task
+                  </button>
                 </div>
 
-                {/* Priority Tasks */}
-                <div className="rounded-xl border border-border bg-surface/50 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-[13px] font-semibold uppercase tracking-wider text-muted">Priority Tasks</h3>
-                    <button onClick={() => setViewMode("projects")} className="text-[10px] text-accent hover:underline">View all</button>
+                {/* Right: Side Panel */}
+                <div className="space-y-4">
+                  {/* Active Workers */}
+                  <div className="rounded-xl border border-border bg-surface/50 p-4">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-3">Active Workers</h3>
+                    <p className="text-[12px] text-muted/60 text-center py-2">No workers running</p>
                   </div>
-                  {dashboardData && dashboardData.tasks.length > 0 ? (
-                    <div className="space-y-2">
-                      {dashboardData.tasks.slice(0, 6).map((task) => (
-                        <button key={task.id} onClick={() => { if (task.project_name) { const proj = projects.find(p => p.name === task.project_name); if (proj) setActiveProject(proj.id); } setViewMode("projects"); }} className="flex w-full items-center gap-2 rounded-lg border border-border/50 bg-background p-2.5 text-left transition-colors hover:border-accent/30">
-                          <span className="rounded px-1.5 py-px text-[9px] font-bold uppercase" style={{ backgroundColor: `${PRIORITY_COLORS[task.priority]}20`, color: PRIORITY_COLORS[task.priority] }}>{task.priority}</span>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[13px] font-medium text-foreground truncate">{task.title}</p>
-                            {task.project_name && <p className="text-[10px] text-accent">{task.project_name}</p>}
-                          </div>
-                          {task.due_date && <span className="shrink-0 text-[10px] text-muted">{formatDateShort(task.due_date)}</span>}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="py-4 text-center text-[12px] text-muted">No priority tasks</p>
-                  )}
-                </div>
 
-                {/* Follow-ups */}
-                <div className="rounded-xl border border-border bg-surface/50 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-[13px] font-semibold uppercase tracking-wider text-muted">Follow-ups Needed</h3>
-                    <button onClick={() => { navTo("contacts"); setSelectedContact(null); }} className="text-[10px] text-accent hover:underline">View all</button>
-                  </div>
-                  {dashboardData && dashboardData.followUps.length > 0 ? (
-                    <div className="space-y-2">
-                      {dashboardData.followUps.slice(0, 5).map((contact) => (
-                        <div key={contact.id} className="flex items-center gap-2 rounded-lg border border-border/50 bg-background p-2.5 cursor-pointer hover:border-accent/30" onClick={() => { setViewMode("contacts"); setSelectedContact(contact); loadContactDetail(contact.id); }}>
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/10 text-[10px] font-bold text-accent">{contact.name.split(" ").map(n => n[0]).join("")}</div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[13px] font-medium text-foreground truncate">{contact.name}</p>
-                            {contact.company && <p className="text-[10px] text-muted">{contact.company}</p>}
+                  {/* Awaiting Approval */}
+                  {dashboardData && dashboardData.pendingActions.length > 0 && (
+                    <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-yellow-400">Awaiting Approval</h3>
+                        <span className="rounded-full bg-yellow-500/20 px-1.5 py-px text-[10px] font-bold text-yellow-400">{dashboardData.pendingActions.length}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {dashboardData.pendingActions.slice(0, 3).map((action) => (
+                          <div key={action.id} className="flex items-center gap-2">
+                            <span className="h-1.5 w-1.5 rounded-full bg-yellow-400 shrink-0" />
+                            <span className="text-[12px] text-foreground/80 truncate flex-1">{action.title}</span>
+                            <div className="flex gap-1 shrink-0">
+                              <button onClick={() => handleActionApproval(action.id, "approved")} className="rounded bg-green-600/80 px-2 py-0.5 text-[10px] text-white hover:bg-green-600">OK</button>
+                              <button onClick={() => handleActionApproval(action.id, "cancelled")} className="rounded bg-surface px-2 py-0.5 text-[10px] text-muted hover:text-foreground">No</button>
+                            </div>
                           </div>
-                          <span className="shrink-0 rounded bg-yellow-500/10 px-1.5 py-0.5 text-[10px] font-medium text-yellow-400">{daysSince(contact.last_contacted_at)}d ago</span>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="py-4 text-center text-[12px] text-muted">All contacts up to date</p>
                   )}
-                </div>
 
-                {/* Recent Activity */}
-                <div className="rounded-xl border border-border bg-surface/50 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-[13px] font-semibold uppercase tracking-wider text-muted">Recent Activity</h3>
-                    <button onClick={() => navTo("office")} className="text-[10px] text-accent hover:underline">View all</button>
+                  {/* Suggestions from Drew */}
+                  <div className="rounded-xl border border-border bg-surface/50 p-4">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-3">Suggestions from Drew</h3>
+                    <p className="text-[12px] text-muted/60 text-center py-2">Ask Drew for suggestions</p>
                   </div>
-                  {dashboardData && dashboardData.activity.length > 0 ? (
-                    <div className="space-y-2">
-                      {dashboardData.activity.slice(0, 6).map((entry, i) => (
-                        <div key={`${entry.type}-${entry.id}-${i}`} className="flex items-start gap-2">
-                          <div className="mt-0.5 shrink-0">
-                            {entry.type === "message" && <div className="flex h-5 w-5 items-center justify-center rounded bg-accent/10"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>}
-                            {entry.type === "task" && <div className="flex h-5 w-5 items-center justify-center rounded bg-blue-500/10"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg></div>}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-[12px] text-foreground/80 leading-snug truncate">{entry.description}</p>
-                            <span className="text-[10px] text-muted">{relativeTime(entry.created_at)}</span>
-                          </div>
-                        </div>
-                      ))}
+
+                  {/* Today's Schedule */}
+                  <div className="rounded-xl border border-border bg-surface/50 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">Today&apos;s Schedule</h3>
+                      <button onClick={() => navTo("calendar")} className="text-[10px] text-accent hover:underline">View all</button>
                     </div>
-                  ) : (
-                    <p className="py-4 text-center text-[12px] text-muted">No recent activity</p>
-                  )}
+                    {dashboardData && dashboardData.events.length > 0 ? (
+                      <div className="space-y-2">
+                        {dashboardData.events.slice(0, 4).map((ev) => (
+                          <button key={ev.id} onClick={() => { navTo("calendar"); setCalendarWeekStart(getMonday(new Date(ev.start_time))); setSelectedEvent(ev); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-hover-bg">
+                            <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: EVENT_TYPE_COLORS[ev.event_type] || "#6366f1" }}/>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[12px] font-medium text-foreground truncate">{ev.title}</p>
+                              <p className="text-[10px] text-muted">{formatTimeRange(ev.start_time, ev.end_time)}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[12px] text-muted/60 text-center py-2">No events today</p>
+                    )}
+                  </div>
+
+                  {/* Activity feed */}
+                  <div className="rounded-xl border border-border bg-surface/50 p-4">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted mb-3">Activity</h3>
+                    {dashboardData && dashboardData.activity.length > 0 ? (
+                      <div className="space-y-2">
+                        {dashboardData.activity.slice(0, 5).map((entry, i) => (
+                          <div key={`${entry.type}-${entry.id}-${i}`} className="flex items-start gap-2">
+                            <div className="mt-0.5 shrink-0">
+                              {entry.type === "message" && <div className="flex h-5 w-5 items-center justify-center rounded bg-accent/10"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>}
+                              {entry.type === "task" && <div className="flex h-5 w-5 items-center justify-center rounded bg-blue-500/10"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg></div>}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[12px] text-foreground/80 leading-snug truncate">{entry.description}</p>
+                              <span className="text-[10px] text-muted">{relativeTime(entry.created_at)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[12px] text-muted/60 text-center py-2">No recent activity</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -3089,23 +3113,64 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* ── Integrations ── */}
+              {/* ── Connectors ── */}
               <div className="mt-8">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
                   </div>
                   <div>
-                    <h4 className="text-[14px] font-semibold text-foreground">Integrations</h4>
-                    <p className="text-[11px] text-muted">Connect external services</p>
+                    <h4 className="text-[14px] font-semibold text-foreground">Connectors</h4>
+                    <p className="text-[11px] text-muted">Connect external services and data sources</p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-3 rounded-lg border border-border bg-surface/50 p-4">
+                  {/* Google connectors */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-[13px] font-medium text-foreground">Drive search</p>
+                      <p className="text-[10px] text-muted">Search your Google Drive files</p>
+                    </div>
+                    <div className="flex h-5 w-9 cursor-pointer items-center rounded-full bg-border p-0.5 transition-colors" title="Coming soon">
+                      <div className="h-4 w-4 rounded-full bg-muted/60 transition-transform" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500/10">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-[13px] font-medium text-foreground">Gmail</p>
+                      <p className="text-[10px] text-muted">Read and send emails through Drew</p>
+                    </div>
+                    <button onClick={() => window.location.href = "/api/integrations/google/auth"} className="rounded-md border border-border px-3 py-1 text-[11px] text-muted hover:text-foreground hover:border-accent/30">
+                      Connect
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500/10">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-[13px] font-medium text-foreground">Google Calendar</p>
+                      <p className="text-[10px] text-muted">Sync events bi-directionally</p>
+                    </div>
+                    <button onClick={() => window.location.href = "/api/integrations/google/auth"} className="rounded-md border border-border px-3 py-1 text-[11px] text-muted hover:text-foreground hover:border-accent/30">
+                      Connect
+                    </button>
+                  </div>
+                </div>
+
+                {/* Other integrations */}
+                <div className="mt-4 grid grid-cols-2 gap-3">
                   {[
-                    { name: "Salesforce", status: "available", icon: "CRM" },
-                    { name: "Slack", status: "available", icon: "MSG" },
-                    { name: "Temporal Cloud", status: "available", icon: "WF" },
-                    { name: "VAPI Voice", status: "available", icon: "VOX" },
+                    { name: "Salesforce", icon: "CRM" },
+                    { name: "Temporal Cloud", icon: "WF" },
+                    { name: "VAPI Voice", icon: "VOX" },
+                    { name: "Recall.ai", icon: "REC" },
                   ].map((integration) => (
                     <div key={integration.name} className="flex items-center gap-3 rounded-lg border border-border bg-surface/50 p-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-background text-[10px] font-bold text-muted">
@@ -3519,6 +3584,191 @@ export default function Home() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Inbox View (Master To-Do) ── */}
+        {viewMode === "inbox" && (
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
+            <div className="mx-auto max-w-3xl">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-foreground">Inbox</h2>
+                  <p className="mt-1 text-[13px] text-muted">All tasks across your projects</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-md border border-border bg-background">
+                    {(["all", "critical", "today", "later"] as const).map((f, i) => (
+                      <button key={f} onClick={() => setInboxFilter(f)} className={`px-2.5 py-1 text-[11px] font-medium capitalize transition-colors ${inboxFilter === f ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"} ${i === 0 ? "rounded-l-md" : i === 3 ? "rounded-r-md" : ""}`}>
+                        {f === "all" ? "All" : f === "critical" ? "Critical" : f === "today" ? "Today" : "Later"}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => setShowAddTask(true)} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:opacity-90">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add Task
+                  </button>
+                </div>
+              </div>
+
+              {/* Task sections */}
+              {[
+                { label: "CRITICAL", filter: (t: any) => t.priority === "urgent", color: "#ef4444", show: inboxFilter === "all" || inboxFilter === "critical" },
+                { label: "INBOX", filter: (t: any) => t.status === "backlog" && t.priority !== "urgent", color: "#8b5cf6", show: inboxFilter === "all" },
+                { label: "TODAY", filter: (t: any) => t.status === "todo" || t.status === "in_progress", color: "#3b82f6", show: inboxFilter === "all" || inboxFilter === "today" },
+                { label: "LATER", filter: (t: any) => t.status === "backlog" && t.priority === "low", color: "#71717a", show: inboxFilter === "all" || inboxFilter === "later" },
+              ].filter(s => s.show).map((section) => {
+                const sectionTasks = (dashboardData?.tasks || tasks).filter(section.filter);
+                return (
+                  <div key={section.label} className="mb-4">
+                    <div className="flex items-center gap-2 py-2">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted"><polyline points="6 9 12 15 18 9"/></svg>
+                      <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: section.color }}>{section.label}</span>
+                      <span className="rounded-full bg-surface px-1.5 py-px text-[10px] font-medium text-muted">{sectionTasks.length}</span>
+                    </div>
+                    {sectionTasks.length > 0 ? (
+                      <div className="space-y-1">
+                        {sectionTasks.map((task) => (
+                          <div key={task.id} className="flex items-center gap-3 rounded-lg border border-border/50 bg-surface/30 px-4 py-3 transition-colors hover:bg-hover-bg cursor-pointer" onClick={() => setEditingTask({ ...task })}>
+                            <span className="h-4 w-4 shrink-0 rounded border border-border hover:border-accent" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[14px] font-medium text-foreground">{task.title}</p>
+                              {task.description && <p className="mt-0.5 text-[12px] text-muted line-clamp-1">{task.description}</p>}
+                            </div>
+                            <span className="rounded px-1.5 py-px text-[9px] font-bold uppercase shrink-0" style={{ backgroundColor: `${PRIORITY_COLORS[task.priority]}20`, color: PRIORITY_COLORS[task.priority] }}>{task.priority}</span>
+                            {task.project_name && <span className="text-[10px] text-accent shrink-0">{task.project_name}</span>}
+                            {task.assignee && <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] text-muted shrink-0">{task.assignee}</span>}
+                            {task.due_date && <span className="text-[10px] text-muted shrink-0">{formatDateShort(task.due_date)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="ml-6 py-2 text-[12px] text-muted/60">No tasks</p>
+                    )}
+                  </div>
+                );
+              })}
+
+              <button onClick={() => setShowAddTask(true)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-muted transition-colors hover:bg-hover-bg hover:text-foreground">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add task
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Activity View ── */}
+        {viewMode === "activity" && (
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
+            <div className="mx-auto max-w-3xl">
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-foreground">Activity</h2>
+                <div className="flex rounded-md border border-border bg-background">
+                  {(["all", "mentions", "dms"] as const).map((f, i) => (
+                    <button key={f} onClick={() => setActivityViewFilter(f)} className={`px-2.5 py-1 text-[11px] font-medium capitalize transition-colors ${activityViewFilter === f ? "bg-accent/15 text-accent" : "text-muted hover:text-foreground"} ${i === 0 ? "rounded-l-md" : i === 2 ? "rounded-r-md" : ""}`}>
+                      {f === "all" ? "All" : f === "mentions" ? "Mentions" : "DMs"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                {activityFeed.length > 0 ? activityFeed
+                  .filter(e => activityViewFilter === "all" || (activityViewFilter === "mentions" && e.type === "message") || (activityViewFilter === "dms" && e.type === "message"))
+                  .map((entry, i) => (
+                  <div key={`${entry.type}-${entry.id}-${i}`} className="flex gap-3 rounded-lg px-4 py-3 transition-colors hover:bg-hover-bg">
+                    <div className="mt-0.5 shrink-0">
+                      {entry.type === "message" && (
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        </div>
+                      )}
+                      {entry.type === "task" && (
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                      )}
+                      {entry.type === "approval" && (
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-500/10">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] text-foreground/80 leading-snug">{entry.description}</p>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        {entry.project_name && <span className="text-[11px] text-accent">{entry.project_name}</span>}
+                        <span className="text-[11px] text-muted">{relativeTime(entry.created_at)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-muted/20 mb-3"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    <p className="text-[14px] text-muted">No activity yet</p>
+                    <p className="mt-1 text-[12px] text-muted/60">Events will appear here as you work</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Finance View ── */}
+        {viewMode === "finance" && (
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
+            <div className="mx-auto max-w-4xl">
+              <h2 className="text-xl font-bold text-foreground mb-1">Finance</h2>
+              <p className="text-[13px] text-muted mb-6">LLM costs and usage tracking</p>
+
+              {/* Cost summary cards */}
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Today</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">$0.00</p>
+                </div>
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">This Week</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">$0.00</p>
+                </div>
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">This Month</p>
+                  <p className="mt-1 text-2xl font-bold text-foreground">$0.00</p>
+                </div>
+              </div>
+
+              {/* Cost by Model */}
+              <div className="rounded-xl border border-border bg-surface/50 p-4 mb-6">
+                <h3 className="text-[13px] font-semibold text-foreground mb-3">Cost by Model</h3>
+                <div className="space-y-2">
+                  {[
+                    { model: "Claude Opus 4.6", tokens: 0, cost: "$0.00", color: "#8b5cf6" },
+                    { model: "Claude Sonnet 4.6", tokens: 0, cost: "$0.00", color: "#3b82f6" },
+                    { model: "Google Gemini", tokens: 0, cost: "$0.00", color: "#22c55e" },
+                    { model: "OpenAI GPT-4o", tokens: 0, cost: "$0.00", color: "#f59e0b" },
+                  ].map((m) => (
+                    <div key={m.model} className="flex items-center gap-3">
+                      <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                      <span className="text-[13px] text-foreground flex-1">{m.model}</span>
+                      <span className="text-[12px] text-muted">{m.tokens.toLocaleString()} tokens</span>
+                      <span className="text-[13px] font-medium text-foreground w-16 text-right">{m.cost}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Placeholder sections */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <h3 className="text-[13px] font-semibold text-foreground mb-3">Cost by Project</h3>
+                  <p className="text-[12px] text-muted/60 text-center py-4">No project usage data yet</p>
+                </div>
+                <div className="rounded-xl border border-border bg-surface/50 p-4">
+                  <h3 className="text-[13px] font-semibold text-foreground mb-3">Budget</h3>
+                  <p className="text-[12px] text-muted/60 text-center py-4">Set a monthly budget in Settings</p>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -4326,47 +4576,77 @@ export default function Home() {
         </button>
       )}
 
-      {/* ── Brain Voice Overlay ── */}
+      {/* ── Brain Voice Overlay (Vapi + Fallback) ── */}
       {brainOverlayOpen && (
-        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-background/95 md:inset-auto md:right-6 md:bottom-24 md:w-[360px] md:h-[400px] md:rounded-2xl md:border md:border-border md:bg-surface md:shadow-2xl">
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-background/95 md:inset-auto md:right-6 md:bottom-24 md:w-[360px] md:h-[440px] md:rounded-2xl md:border md:border-border md:bg-surface md:shadow-2xl">
           <button onClick={() => setBrainOverlayOpen(false)} className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:text-foreground hover:bg-hover-bg">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
-          <div className="flex flex-col items-center gap-6">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-accent/20">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent">
+          <div className="flex flex-col items-center gap-5">
+            {/* Animated brain icon */}
+            <div className={`flex h-20 w-20 items-center justify-center rounded-full transition-all ${recording ? "bg-red-500/20 scale-110" : "bg-accent/20"}`}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={recording ? "text-red-400" : "text-accent"}>
                 <path d="M12 2a7 7 0 0 0-7 7c0 3 1.5 5 3 6.5V18h8v-2.5c1.5-1.5 3-3.5 3-6.5a7 7 0 0 0-7-7z"/>
                 <path d="M9 22h6"/><path d="M10 18v4"/><path d="M14 18v4"/>
               </svg>
             </div>
-            <p className="text-[15px] font-medium text-foreground">{recording ? "Listening..." : transcribing ? "Transcribing..." : "Hold to speak to Drew"}</p>
+            <div className="text-center">
+              <p className="text-[16px] font-semibold text-foreground">Drew</p>
+              <p className="text-[13px] text-muted mt-0.5">
+                {recording ? "Listening..." : transcribing ? "Drew is thinking..." : sending ? "Drew is speaking..." : "Tap mic to speak"}
+              </p>
+            </div>
+
+            {/* Waveform animation */}
+            {(recording || sending) && (
+              <div className="flex items-center gap-1 h-8">
+                {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                  <span key={i} className="w-1 animate-pulse rounded-full bg-accent" style={{ animationDelay: `${i * 80}ms`, height: `${10 + Math.random() * 20}px` }}/>
+                ))}
+              </div>
+            )}
+
+            {/* Mic button — hold to record (Whisper fallback), or tap to start Vapi */}
+            <div className="flex items-center gap-4">
+              <button
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+                onMouseLeave={() => recording && stopRecording()}
+                onTouchStart={startRecording}
+                onTouchEnd={stopRecording}
+                disabled={sending || transcribing}
+                className={`flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all ${
+                  recording ? "bg-red-500 text-white scale-110" : transcribing ? "bg-accent/80 text-white" : "bg-accent text-white hover:opacity-90"
+                }`}
+              >
+                {transcribing ? (
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"/>
+                ) : recording ? (
+                  <div className="flex items-center gap-0.5">
+                    <span className="h-3 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "0ms" }}/>
+                    <span className="h-5 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "150ms" }}/>
+                    <span className="h-4 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "300ms" }}/>
+                    <span className="h-3 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "450ms" }}/>
+                  </div>
+                ) : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                )}
+              </button>
+            </div>
+
+            {/* End call button */}
             <button
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-              onMouseLeave={() => recording && stopRecording()}
-              onTouchStart={startRecording}
-              onTouchEnd={stopRecording}
-              disabled={sending || transcribing}
-              className={`flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all ${
-                recording ? "bg-red-500 text-white scale-110" : transcribing ? "bg-accent/80 text-white" : "bg-accent text-white hover:opacity-90"
-              }`}
+              onClick={() => setBrainOverlayOpen(false)}
+              className="flex items-center gap-2 rounded-full bg-red-500/10 px-4 py-2 text-[13px] font-medium text-red-400 hover:bg-red-500/20 transition-colors"
             >
-              {transcribing ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"/>
-              ) : recording ? (
-                <div className="flex items-center gap-0.5">
-                  <span className="h-3 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "0ms" }}/>
-                  <span className="h-5 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "150ms" }}/>
-                  <span className="h-4 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "300ms" }}/>
-                  <span className="h-3 w-1 animate-pulse rounded-full bg-white" style={{ animationDelay: "450ms" }}/>
-                </div>
-              ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-                </svg>
-              )}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/></svg>
+              End
             </button>
+
+            <p className="text-[10px] text-muted/60">Hold mic to record, release to send</p>
           </div>
         </div>
       )}
@@ -4374,20 +4654,16 @@ export default function Home() {
       {/* ── Mobile Bottom Nav ── */}
       <nav className="mobile-nav items-center justify-around px-2">
         <button onClick={() => navTo("dashboard")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "dashboard" ? "text-accent" : "text-muted"}`}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           <span className="text-[10px] font-medium">Home</span>
         </button>
-        <button onClick={() => { navTo("ask"); }} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "ask" ? "text-accent" : "text-muted"}`}>
+        <button onClick={() => navTo("ask")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "ask" ? "text-accent" : "text-muted"}`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span className="text-[10px] font-medium">Ask</span>
         </button>
-        <button onClick={() => navTo("projects")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "projects" ? "text-accent" : "text-muted"}`}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          <span className="text-[10px] font-medium">Projects</span>
-        </button>
-        <button onClick={() => navTo("contacts")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "contacts" ? "text-accent" : "text-muted"}`}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-          <span className="text-[10px] font-medium">Contacts</span>
+        <button onClick={() => navTo("activity")} className={`flex flex-col items-center gap-0.5 px-2 py-1 ${viewMode === "activity" ? "text-accent" : "text-muted"}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span className="text-[10px] font-medium">Activity</span>
         </button>
         <button onClick={() => setMoreSheetOpen(true)} className={`flex flex-col items-center gap-0.5 px-2 py-1 text-muted`}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
@@ -4440,7 +4716,11 @@ export default function Home() {
             <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-muted/30"/>
             <div className="mt-4 px-4 space-y-1">
               {[
+                { mode: "inbox" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>, label: "Inbox" },
+                { mode: "projects" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>, label: "Projects" },
+                { mode: "contacts" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>, label: "Contacts" },
                 { mode: "calendar" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>, label: "Calendar" },
+                { mode: "finance" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>, label: "Finance" },
                 { mode: "files" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>, label: "Files" },
                 { mode: "office" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>, label: "The Office" },
                 { mode: "lab" as ViewMode, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 3h6v6l3 9H6l3-9V3z"/><line x1="8" y1="3" x2="16" y2="3"/></svg>, label: "The Lab" },

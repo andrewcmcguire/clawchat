@@ -76,6 +76,50 @@ INSERT INTO memory_entries (workspace_id, scope, scope_id, key, value, pinned, v
   ('default', 'worker', 'drew', 'tools_available', 'Email (pending SMTP setup), Calendar (local DB), Phone (pending Telnyx), SMS (pending Telnyx), Research (web search pending), Task management (active).', false, 1)
 ON CONFLICT (workspace_id, scope, scope_id, key) DO NOTHING;
 
+-- Projects (channels for workspace) — real projects
+INSERT INTO channels (id, workspace_id, name, description, is_dm) VALUES
+  ('steadybase-v2', 'default', 'Steadybase V2', 'Rebuild the UI to match mockups. Replace Slack tonight.', false),
+  ('sales-pipeline', 'default', 'Sales Pipeline', 'Track deals, proposals, and revenue targets.', false),
+  ('content-marketing', 'default', 'Content & Marketing', 'Brand voice, content calendar, and campaign tracking.', false),
+  ('qa-testing', 'default', 'QA & Testing', 'Quality assurance, test plans, and bug tracking.', false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Tasks for steadybase-v2
+INSERT INTO project_tasks (channel_id, title, description, status, priority, assignee, due_date) VALUES
+  ('steadybase-v2', 'Rebuild sidebar to match mockup', 'Replace icon bar + secondary sidebar with single Slack-style sidebar', 'done', 'urgent', 'Andrew', CURRENT_DATE),
+  ('steadybase-v2', 'Add hash-based URL routing', 'Read/write window.location.hash for all views', 'done', 'high', 'Andrew', CURRENT_DATE),
+  ('steadybase-v2', 'Dashboard KPI cards', 'Add LLM Costs, Projects, Workers, Due cards to dashboard', 'done', 'high', 'Andrew', CURRENT_DATE),
+  ('steadybase-v2', 'Build Inbox view', 'Cross-project task aggregation with CRITICAL/INBOX/TODAY/LATER sections', 'done', 'high', 'Andrew', CURRENT_DATE),
+  ('steadybase-v2', 'Build Activity view', 'Chronological feed with filter tabs', 'done', 'medium', 'Andrew', CURRENT_DATE),
+  ('steadybase-v2', 'Build Finance view', 'LLM cost tracking by model, project, period', 'done', 'medium', 'Andrew', CURRENT_DATE),
+  ('steadybase-v2', 'Settings Connectors page', 'Google Drive, Gmail, Calendar connect buttons', 'done', 'medium', 'Andrew', CURRENT_DATE),
+  ('steadybase-v2', 'Deploy to AWS', 'Push, build, PM2 restart on EC2', 'todo', 'urgent', 'Andrew', CURRENT_DATE),
+  ('steadybase-v2', 'Wire Vapi voice assistant', 'Floating brain button triggers real-time voice with Drew', 'backlog', 'medium', NULL, CURRENT_DATE + INTERVAL '3 days'),
+  ('steadybase-v2', 'Recall.ai meeting transcription', 'Auto-join meetings and transcribe', 'backlog', 'low', NULL, CURRENT_DATE + INTERVAL '7 days')
+ON CONFLICT DO NOTHING;
+
+-- Tasks for sales-pipeline
+INSERT INTO project_tasks (channel_id, title, description, status, priority, assignee, due_date) VALUES
+  ('sales-pipeline', 'Send Acme Corp proposal', 'Custom pricing for 500k-2M API calls/month', 'todo', 'urgent', 'Andrew', CURRENT_DATE + INTERVAL '1 day'),
+  ('sales-pipeline', 'Schedule demo for Elena Rodriguez', 'BrightPath needs custom reporting demo', 'todo', 'high', 'Andrew', CURRENT_DATE + INTERVAL '2 days'),
+  ('sales-pipeline', 'Follow up with James Morrison', 'Check Q2 budget approval status at Global Retail', 'todo', 'high', 'Drew', CURRENT_DATE),
+  ('sales-pipeline', 'Update pricing tiers', 'Add volume-based pricing for enterprise', 'backlog', 'medium', NULL, CURRENT_DATE + INTERVAL '5 days')
+ON CONFLICT DO NOTHING;
+
+-- Tasks for content-marketing
+INSERT INTO project_tasks (channel_id, title, description, status, priority, assignee, due_date) VALUES
+  ('content-marketing', 'Write launch announcement', 'Blog post for Steadybase v2 launch', 'todo', 'high', 'Andrew', CURRENT_DATE + INTERVAL '3 days'),
+  ('content-marketing', 'Create demo video', 'Screen recording of new dashboard + sidebar', 'backlog', 'medium', NULL, CURRENT_DATE + INTERVAL '5 days'),
+  ('content-marketing', 'Update docs site', 'docs.steadybase.io needs new screenshots', 'backlog', 'low', NULL, CURRENT_DATE + INTERVAL '7 days')
+ON CONFLICT DO NOTHING;
+
+-- Skills for projects
+INSERT INTO project_skills (channel_id, name, content, active) VALUES
+  ('qa-testing', 'QA Expert', 'You are a meticulous QA expert. Test every view, button, and interaction. Report bugs with exact steps to reproduce. Check mobile responsiveness. Verify data loads correctly from APIs.', true),
+  ('sales-pipeline', 'Sales Process', 'Follow the deal stages: Lead > Qualified > Discovery > Proposal > Negotiation > Closed. Qualify leads within 24h. Follow up within 3 business days. All deals over $50k need co-founder approval.', true),
+  ('content-marketing', 'Brand Voice', 'SteadyBase voice: Professional but approachable. Direct, not verbose. Data-driven. Use clear headings, bullet points, and action items. Avoid jargon unless speaking to technical audience.', true)
+ON CONFLICT DO NOTHING;
+
 -- Assistant actions (~3)
 INSERT INTO assistant_actions (workspace_id, action_type, status, title, description, target_contact_id, requires_approval, scheduled_for, created_at) VALUES
   ('default', 'email', 'pending', 'Send follow-up email to Sarah Kim about pricing', 'Draft and send updated pricing proposal based on the 500k-2M API calls/month discussion. Include custom volume tiers.', 1, true, NOW() + INTERVAL '2 hours', NOW() - INTERVAL '6 hours'),

@@ -188,7 +188,7 @@ button, [role="button"] {
   .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
   .brain-fab-hide-chat { display: none !important; }
   .toast-container { bottom: 80px !important; }
-  .icon-bar { display: none !important; }
+  /* icon-bar removed in v2 — single sidebar now */
 }
 
 @media screen and (max-width: 480px) {
