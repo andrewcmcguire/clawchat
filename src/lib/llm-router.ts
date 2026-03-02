@@ -68,8 +68,7 @@ export async function routeToLLM(
   const config = await loadProviderConfig(projectId);
 
   if (agentId === "drew") {
-    // Use Claude CLI with OAuth — no API key needed
-    return callClaudeCLI(systemPrompt, messages);
+    return callClaudeOpus(systemPrompt, messages, anthropic);
   }
 
   // Workers: try LM Studio first
@@ -169,7 +168,7 @@ async function callClaudeOpus(
     max_tokens: 16000,
     temperature: 1,
     thinking: { type: "enabled", budget_tokens: 5000 },
-    system: systemPrompt,
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
     messages,
   });
 
