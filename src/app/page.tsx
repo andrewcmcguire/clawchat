@@ -223,6 +223,7 @@ export default function Home() {
   const [activityFilter, setActivityFilter] = useState<"all" | "message" | "task" | "approval">("all");
   // Lab state
   const [labTab, setLabTab] = useState<"sandbox" | "skills" | "spawn">("sandbox");
+  const [settingsTab, setSettingsTab] = useState<"profile" | "brain" | "api-keys" | "connectors" | "memory">("profile");
   const [labSystemPrompt, setLabSystemPrompt] = useState("");
   const [labUserMessage, setLabUserMessage] = useState("");
   const [labProvider, setLabProvider] = useState<string>("claude-opus");
@@ -1356,122 +1357,119 @@ export default function Home() {
             </button>
           ))}
 
-          {/* WORKSPACE section */}
-          {!sidebarCollapsed && <p className="px-4 mt-4 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted/60">Workspace</p>}
-          {[
-            { mode: "ask" as ViewMode, icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>, label: "Ask" },
-          ].map((item) => (
-            <button
-              key={item.mode}
-              onClick={() => navTo(item.mode)}
-              className={`flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] transition-colors ${
-                viewMode === item.mode ? "bg-accent/10 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"
-              } ${sidebarCollapsed ? "justify-center px-0" : ""}`}
-            >
-              <span className={viewMode === item.mode ? "text-accent" : "text-muted"}>{item.icon}</span>
-              {!sidebarCollapsed && <span>{item.label}</span>}
-            </button>
-          ))}
+          {/* Ask nav */}
+          <button
+            onClick={() => navTo("ask")}
+            className={`flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] transition-colors ${
+              viewMode === "ask" ? "bg-accent/10 font-semibold text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"
+            } ${sidebarCollapsed ? "justify-center px-0" : ""}`}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={viewMode === "ask" ? "text-accent" : "text-muted"}><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+            {!sidebarCollapsed && <span>Ask</span>}
+            {!sidebarCollapsed && viewMode === "ask" && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-accent" />}
+          </button>
 
-          {/* DMs expandable */}
+          {/* DMs section */}
           {!sidebarCollapsed && (
-            <div>
-              <button onClick={() => toggleSidebarSection("dms")} className="flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] text-foreground/70 hover:bg-hover-bg hover:text-foreground">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="text-muted"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                <span>DMs</span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`ml-auto text-muted transition-transform ${expandedSections.dms ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6"/></svg>
-                <button onClick={(e) => { e.stopPropagation(); setShowNewDM(true); loadDMUsers(); }} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New DM">
+            <div className="mt-3">
+              <div className="flex items-center justify-between px-4 mb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">DMs</span>
+                <button onClick={() => { setShowNewDM(true); loadDMUsers(); }} className="flex h-4 w-4 items-center justify-center rounded text-muted/40 hover:text-foreground" title="New DM">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
-              </button>
-              {expandedSections.dms && (
-                <>
-                  {showNewDM && (
-                    <div className="mx-4 mb-2 rounded-lg border border-border bg-surface p-2">
-                      <p className="text-[11px] text-muted mb-1.5">Select a user</p>
-                      {dmUsers.filter((u) => u.email !== session?.user?.email).map((u) => (
-                        <button key={u.id} onClick={async () => {
-                          try {
-                            const res = await fetch("/api/dm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: u.email }) });
-                            if (res.ok) { const dm = await res.json(); switchProject(dm.id); loadProjects(); }
-                          } catch {}
-                          setShowNewDM(false);
-                        }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-hover-bg">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/20 text-[10px] font-bold text-accent">{u.name[0]?.toUpperCase()}</div>
-                          {u.name}
-                        </button>
-                      ))}
-                      {dmUsers.filter((u) => u.email !== session?.user?.email).length === 0 && (
-                        <p className="text-[11px] text-muted/60 py-2 text-center">No other users yet</p>
-                      )}
-                      <button onClick={() => setShowNewDM(false)} className="mt-1 w-full text-center text-[11px] text-muted hover:text-foreground">Cancel</button>
-                    </div>
+              </div>
+              {showNewDM && (
+                <div className="mx-3 mb-2 rounded-lg border border-border bg-surface p-2">
+                  <p className="text-[11px] text-muted mb-1.5">Select a user</p>
+                  {dmUsers.filter((u) => u.email !== session?.user?.email).map((u) => (
+                    <button key={u.id} onClick={async () => {
+                      try {
+                        const res = await fetch("/api/dm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: u.email }) });
+                        if (res.ok) { const dm = await res.json(); switchProject(dm.id); loadProjects(); navTo("ask"); }
+                      } catch {}
+                      setShowNewDM(false);
+                    }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-foreground hover:bg-hover-bg">
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent/20 text-[8px] font-bold text-accent">{u.name[0]?.toUpperCase()}</div>
+                      {u.name}
+                    </button>
+                  ))}
+                  {dmUsers.filter((u) => u.email !== session?.user?.email).length === 0 && (
+                    <p className="text-[11px] text-muted/60 py-2 text-center">No other users yet. Invite from Admin.</p>
                   )}
-                  {projects.filter((p) => p.is_dm).map((dm) => {
-                    const otherEmail = dm.dm_user1 === session?.user?.email ? dm.dm_user2 : dm.dm_user1;
-                    const isOnline = onlineUsers.some((u) => u.email === otherEmail);
-                    return (
-                      <button key={dm.id} onClick={() => { switchProject(dm.id); navTo("ask"); }}
-                        className={`flex w-full items-center gap-2 rounded-md px-6 py-[5px] text-left text-[13px] transition-colors ${
-                          activeProject === dm.id && viewMode === "ask" ? "bg-accent/10 font-medium text-accent" : "text-foreground/60 hover:bg-hover-bg"
-                        }`}>
-                        <div className="relative">
-                          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent/20 text-[8px] font-bold text-accent">{dm.name[0]?.toUpperCase()}</div>
-                          {isOnline && <span className="absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full border border-sidebar-bg bg-green-500" />}
-                        </div>
-                        <span className="truncate">{dm.name}</span>
-                      </button>
-                    );
-                  })}
-                </>
+                  <button onClick={() => setShowNewDM(false)} className="mt-1 w-full text-center text-[11px] text-muted hover:text-foreground">Cancel</button>
+                </div>
               )}
+              {/* Drew - always visible */}
+              <button
+                onClick={() => navTo("ask")}
+                className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[13px] transition-colors ${
+                  viewMode === "ask" && !projects.find(p => p.id === activeProject)?.is_dm
+                    ? "text-foreground" : "text-foreground/50 hover:bg-hover-bg hover:text-foreground/80"
+                }`}
+              >
+                <span className="flex-1">Drew</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+              </button>
+              {/* DM conversations */}
+              {projects.filter((p) => p.is_dm).map((dm) => {
+                const otherEmail = dm.dm_user1 === session?.user?.email ? dm.dm_user2 : dm.dm_user1;
+                const isOnline = onlineUsers.some((u) => u.email === otherEmail);
+                return (
+                  <button key={dm.id} onClick={() => { switchProject(dm.id); navTo("ask"); }}
+                    className={`flex w-full items-center gap-2 rounded-md px-4 py-[5px] text-left text-[13px] transition-colors ${
+                      activeProject === dm.id && viewMode === "ask" ? "text-foreground font-medium" : "text-foreground/50 hover:bg-hover-bg hover:text-foreground/80"
+                    }`}>
+                    <span className="flex-1 truncate">{dm.name}</span>
+                    {isOnline && <span className="h-1.5 w-1.5 rounded-full bg-green-500" />}
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          {/* Channels expandable */}
+          {/* Spaces section (projects) */}
           {!sidebarCollapsed && (
-            <div>
-              <button onClick={() => toggleSidebarSection("channels")} className="flex w-full items-center gap-2.5 rounded-md px-4 py-[7px] text-left text-[14px] text-foreground/70 hover:bg-hover-bg hover:text-foreground">
-                <span className="text-muted text-[16px] font-medium">#</span>
-                <span>Channels</span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`ml-auto text-muted transition-transform ${expandedSections.channels ? "rotate-90" : ""}`}><polyline points="9 18 15 12 9 6"/></svg>
-                <button onClick={(e) => { e.stopPropagation(); setShowNewProject(true); }} className="flex h-5 w-5 items-center justify-center rounded text-muted hover:text-foreground" title="New channel">
+            <div className="mt-3">
+              <div className="flex items-center justify-between px-4 mb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">Spaces</span>
+                <button onClick={() => setShowNewProject(true)} className="flex h-4 w-4 items-center justify-center rounded text-muted/40 hover:text-foreground" title="New space">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
-              </button>
-              {expandedSections.channels && projects.filter((p) => !p.is_dm).map((proj) => (
-                <div key={proj.id} className="group flex items-center">
-                  {editingProject === proj.id ? (
-                    <div className="flex flex-1 items-center gap-1 px-6 py-0.5">
-                      <input type="text" value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && editProjectName.trim()) renameProject(proj.id, editProjectName.trim()); if (e.key === "Escape") setEditingProject(null); }} className="min-w-0 flex-1 rounded border border-accent/50 bg-background px-2 py-0.5 text-[13px] text-foreground outline-none" autoFocus/>
-                    </div>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => { switchProject(proj.id); navTo("ask"); }}
-                        className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-6 py-[5px] text-left text-[13px] transition-colors ${
-                          activeProject === proj.id && viewMode === "ask"
-                            ? "bg-accent/10 font-medium text-accent"
-                            : "text-foreground/60 hover:bg-hover-bg hover:text-foreground/90"
-                        }`}
-                      >
-                        <span className="text-muted/50 text-[12px]">#</span>
-                        <span className="truncate">{proj.name}</span>
-                      </button>
-                      <div className="flex shrink-0 gap-0.5 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={(e) => { e.stopPropagation(); setEditingProject(proj.id); setEditProjectName(proj.name); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-foreground" title="Rename">
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
-                        {proj.id !== "general" && (
-                          <button onClick={(e) => { e.stopPropagation(); deleteProject(proj.id); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-red-400" title="Delete">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                          </button>
-                        )}
+              </div>
+              {projects.filter((p) => !p.is_dm).map((proj) => {
+                const colors = ["from-violet-500 to-purple-600", "from-blue-500 to-cyan-500", "from-emerald-500 to-green-500", "from-amber-500 to-orange-500", "from-pink-500 to-rose-500"];
+                const colorIdx = proj.name.charCodeAt(0) % colors.length;
+                return (
+                  <div key={proj.id} className="group flex items-center">
+                    {editingProject === proj.id ? (
+                      <div className="flex flex-1 items-center gap-1 px-4 py-0.5">
+                        <input type="text" value={editProjectName} onChange={(e) => setEditProjectName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && editProjectName.trim()) renameProject(proj.id, editProjectName.trim()); if (e.key === "Escape") setEditingProject(null); }} className="min-w-0 flex-1 rounded border border-accent/50 bg-background px-2 py-0.5 text-[13px] text-foreground outline-none" autoFocus/>
                       </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => { switchProject(proj.id); navTo("ask"); }}
+                          className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-4 py-[5px] text-left text-[13px] transition-colors ${
+                            activeProject === proj.id
+                              ? "text-foreground font-medium"
+                              : "text-foreground/50 hover:bg-hover-bg hover:text-foreground/80"
+                          }`}
+                        >
+                          <div className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-gradient-to-br ${colors[colorIdx]} text-[9px] font-semibold text-white`}>
+                            {proj.name[0]?.toUpperCase()}
+                          </div>
+                          <span className="truncate">{proj.name}</span>
+                        </button>
+                        <div className="flex shrink-0 gap-0.5 pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={(e) => { e.stopPropagation(); setEditingProject(proj.id); setEditProjectName(proj.name); }} className="flex h-5 w-5 items-center justify-center rounded text-muted/40 hover:text-foreground" title="Rename">
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -2595,164 +2593,116 @@ export default function Home() {
         {/* ── Lab View ── */}
         {viewMode === "lab" && (
           <div className="flex-1 overflow-y-auto p-4">
-            {/* Prompt Sandbox */}
+            {/* Lab Quadrant View */}
             {labTab === "sandbox" && (
-              <div className="mx-auto max-w-5xl">
-                <div className={labCompareMode ? "grid grid-cols-1 gap-4" : "grid grid-cols-2 gap-4"}>
-                  {/* Input panel */}
-                  <div className={labCompareMode ? "" : ""}>
-                    <div className="rounded-xl border border-border bg-surface/50 p-4">
-                      <h4 className="text-[13px] font-bold text-foreground mb-3">Input</h4>
-                      <div className="space-y-3">
-                        <div>
-                          <label className="text-[12px] font-medium text-muted">System Prompt</label>
-                          <textarea
-                            value={labSystemPrompt}
-                            onChange={(e) => setLabSystemPrompt(e.target.value)}
-                            placeholder="You are a helpful assistant..."
-                            rows={4}
-                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground placeholder-muted outline-none resize-none focus:border-accent/50"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[12px] font-medium text-muted">User Message</label>
-                          <textarea
-                            value={labUserMessage}
-                            onChange={(e) => setLabUserMessage(e.target.value)}
-                            placeholder="Type your test prompt here..."
-                            rows={4}
-                            className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground placeholder-muted outline-none resize-none focus:border-accent/50"
-                          />
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="flex-1">
-                            <label className="text-[12px] font-medium text-muted">Provider</label>
-                            <select
-                              value={labProvider}
-                              onChange={(e) => setLabProvider(e.target.value)}
-                              className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                            >
-                              <option value="claude-opus">Claude Opus</option>
-                              <option value="claude-sonnet">Claude Sonnet</option>
-                              <option value="lmstudio">LM Studio</option>
-                              <option value="google">Google Gemini</option>
-                              <option value="openai">OpenAI</option>
-                            </select>
+              <div className="mx-auto max-w-6xl">
+                {/* 2x2 Provider Quadrants */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  {[
+                    { name: "Anthropic", model: "Claude Opus 4.6", color: "#d4a27a", status: "green", desc: "Most capable model for complex reasoning and analysis", provider: "claude-opus" },
+                    { name: "OpenAI", model: "GPT-4o", color: "#74aa9c", status: "yellow", desc: "Multimodal model with vision, audio, and text capabilities", provider: "openai" },
+                    { name: "Google", model: "Gemini 2.0", color: "#4285f4", status: "green", desc: "Long context window with multimodal understanding", provider: "google" },
+                    { name: "Local", model: "LM Studio", color: "#a78bfa", status: "red", desc: "Self-hosted models for privacy and offline use", provider: "lmstudio" },
+                  ].map((q) => (
+                    <div key={q.name} className="rounded-xl border border-border bg-surface/50 p-5 transition-all hover:border-accent/20">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg text-white text-[12px] font-bold" style={{ backgroundColor: q.color }}>{q.name[0]}</div>
+                          <div>
+                            <h4 className="text-[14px] font-semibold text-foreground">{q.name}</h4>
+                            <p className="text-[11px] text-muted">{q.model}</p>
                           </div>
-                          {labCompareMode && (
-                            <div className="flex-1">
-                              <label className="text-[12px] font-medium text-muted">Provider B</label>
-                              <select
-                                value={labProviderB}
-                                onChange={(e) => setLabProviderB(e.target.value)}
-                                className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                              >
-                                <option value="claude-opus">Claude Opus</option>
-                                <option value="claude-sonnet">Claude Sonnet</option>
-                                <option value="lmstudio">LM Studio</option>
-                                <option value="google">Google Gemini</option>
-                                <option value="openai">OpenAI</option>
-                              </select>
-                            </div>
-                          )}
                         </div>
-                        <div className="flex items-center justify-between">
-                          <label className="flex items-center gap-2 text-[12px] text-muted cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={labCompareMode}
-                              onChange={(e) => setLabCompareMode(e.target.checked)}
-                              className="accent-accent"
-                            />
-                            Compare Mode
-                          </label>
-                          <button
-                            onClick={runLabPrompt}
-                            disabled={labRunning || !labUserMessage.trim()}
-                            className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-30"
-                          >
-                            {labRunning ? (
-                              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"/>
-                            ) : (
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                            )}
-                            {labRunning ? "Running..." : "Run"}
-                          </button>
-                        </div>
+                        <span className={`h-2.5 w-2.5 rounded-full ${q.status === "green" ? "bg-green-500" : q.status === "yellow" ? "bg-yellow-500" : "bg-red-500"}`} />
+                      </div>
+                      <p className="text-[12px] text-muted/80 leading-relaxed mb-4">{q.desc}</p>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setLabProvider(q.provider); setLabTab("sandbox"); }} className="rounded-md border border-border px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-hover-bg">Test</button>
+                        <button className="rounded-md border border-border px-3 py-1.5 text-[11px] font-medium text-muted transition-colors hover:bg-hover-bg hover:text-foreground">Explore</button>
                       </div>
                     </div>
+                  ))}
+                </div>
+
+                {/* My Bench + Prompt Sandbox */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* My Bench */}
+                  <div className="rounded-xl border border-border bg-surface/50 p-5">
+                    <h4 className="text-[13px] font-semibold text-foreground mb-3 flex items-center gap-2">
+                      <span>My Bench</span>
+                      {labResult && <span className="rounded-full bg-accent/20 px-1.5 py-px text-[10px] font-bold text-accent">1</span>}
+                    </h4>
+                    {!labResult ? (
+                      <p className="text-[12px] text-muted/60 py-4 text-center">No experiments yet. Test a provider above.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="rounded-lg border border-border/50 bg-background/50 p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[11px] font-medium text-foreground">{labResult.provider}</span>
+                            <span className="text-[10px] text-muted">{(labResult.inputTokens || 0) + (labResult.outputTokens || 0)} tokens</span>
+                          </div>
+                          <p className="text-[11px] text-muted line-clamp-2">{labResult.text?.slice(0, 100)}...</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Result panel(s) */}
-                  {!labCompareMode ? (
-                    <div className="rounded-xl border border-border bg-surface/50 p-4">
-                      <h4 className="text-[13px] font-bold text-foreground mb-3">Result</h4>
-                      {labResult ? (
-                        labResult.error ? (
-                          <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3">
-                            <p className="text-[13px] text-red-400">{labResult.error}</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap gap-2">
-                              <span className="rounded bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">{labResult.provider}</span>
-                              <span className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted">{(labResult.latency / 1000).toFixed(1)}s</span>
-                              <span className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted">{labResult.inputTokens} in / {labResult.outputTokens} out</span>
-                              <span className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted">~${labResult.cost}</span>
-                            </div>
-                            <div className="rounded-lg border border-border bg-background p-3">
-                              <div className="msg-content text-[13px] leading-relaxed text-foreground/90">
+                  {/* Quick Prompt Test */}
+                  <div className="rounded-xl border border-border bg-surface/50 p-5">
+                    <h4 className="text-[13px] font-semibold text-foreground mb-3">Quick Test</h4>
+                    <div className="space-y-3">
+                      <textarea
+                        value={labUserMessage}
+                        onChange={(e) => setLabUserMessage(e.target.value)}
+                        placeholder="Type a prompt to test..."
+                        rows={3}
+                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[12px] text-foreground placeholder-muted outline-none resize-none focus:border-accent/50"
+                      />
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={labProvider}
+                          onChange={(e) => setLabProvider(e.target.value)}
+                          className="flex-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] text-foreground outline-none focus:border-accent/50"
+                        >
+                          <option value="claude-opus">Claude Opus</option>
+                          <option value="claude-sonnet">Claude Sonnet</option>
+                          <option value="google">Gemini</option>
+                          <option value="openai">OpenAI</option>
+                          <option value="lmstudio">LM Studio</option>
+                        </select>
+                        <button
+                          onClick={runLabPrompt}
+                          disabled={labRunning || !labUserMessage.trim()}
+                          className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-medium text-white hover:opacity-90 disabled:opacity-30"
+                        >
+                          {labRunning ? (
+                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white"/>
+                          ) : (
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          )}
+                          {labRunning ? "Running..." : "Run"}
+                        </button>
+                      </div>
+                      {labResult && (
+                        <div className="rounded-lg border border-border bg-background p-2.5">
+                          {labResult.error ? (
+                            <p className="text-[11px] text-red-400">{labResult.error}</p>
+                          ) : (
+                            <div>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="rounded bg-accent/10 px-1.5 py-px text-[10px] font-medium text-accent">{labResult.provider}</span>
+                                <span className="text-[10px] text-muted">{(labResult.latency / 1000).toFixed(1)}s</span>
+                                <span className="text-[10px] text-muted">{labResult.inputTokens + labResult.outputTokens} tokens</span>
+                              </div>
+                              <div className="msg-content text-[11px] leading-relaxed text-foreground/80 line-clamp-6">
                                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{labResult.text}</ReactMarkdown>
                               </div>
                             </div>
-                          </div>
-                        )
-                      ) : (
-                        <div className="flex flex-col items-center justify-center py-12 text-center">
-                          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-accent/10">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                          </div>
-                          <p className="text-[13px] text-muted">Run a prompt to see results</p>
+                          )}
                         </div>
                       )}
                     </div>
-                  ) : (
-                    /* Compare mode: two result panels side by side */
-                    <div className="grid grid-cols-2 gap-4">
-                      {[
-                        { label: "Provider A", result: labResult, provider: labProvider },
-                        { label: "Provider B", result: labResultB, provider: labProviderB },
-                      ].map((panel) => (
-                        <div key={panel.label} className="rounded-xl border border-border bg-surface/50 p-4">
-                          <h4 className="text-[13px] font-bold text-foreground mb-3">{panel.label}</h4>
-                          {panel.result ? (
-                            panel.result.error ? (
-                              <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3">
-                                <p className="text-[13px] text-red-400">{panel.result.error}</p>
-                              </div>
-                            ) : (
-                              <div className="space-y-3">
-                                <div className="flex flex-wrap gap-2">
-                                  <span className="rounded bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">{panel.result.provider}</span>
-                                  <span className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted">{(panel.result.latency / 1000).toFixed(1)}s</span>
-                                  <span className="rounded bg-surface px-2 py-0.5 text-[11px] text-muted">~${panel.result.cost}</span>
-                                </div>
-                                <div className="rounded-lg border border-border bg-background p-3">
-                                  <div className="msg-content text-[13px] leading-relaxed text-foreground/90">
-                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{panel.result.text}</ReactMarkdown>
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          ) : (
-                            <div className="flex flex-col items-center justify-center py-8 text-center">
-                              <p className="text-[12px] text-muted">{labRunning ? "Running..." : "Waiting for run"}</p>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  </div>
                 </div>
               </div>
             )}
@@ -2990,274 +2940,255 @@ export default function Home() {
 
         {/* ── Settings View ── */}
         {viewMode === "settings" && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="mx-auto max-w-2xl">
-              <h3 className="text-xl font-bold text-foreground">Settings</h3>
-              <p className="mt-1 text-[13px] text-muted">Configure your brain, providers, and integrations.</p>
-
-              {/* ── Brain Configuration ── */}
-              <div className="mt-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                  </div>
-                  <div>
-                    <h4 className="text-[14px] font-semibold text-foreground">Brain</h4>
-                    <p className="text-[11px] text-muted">Drew&apos;s model, thinking budget, and failover chain</p>
-                  </div>
-                </div>
-                <div className="space-y-4 rounded-lg border border-border bg-surface/50 p-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[12px] font-medium text-muted">Brain Model</label>
-                      <select
-                        defaultValue={globalSettings.brain_model || "claude-opus-4-6"}
-                        onChange={(e) => saveGlobalSettings({ brain_model: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                      >
-                        <option value="claude-opus-4-6">Claude Opus 4.6</option>
-                        <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[12px] font-medium text-muted">Thinking Budget</label>
-                      <select
-                        defaultValue={globalSettings.thinking_budget || "5000"}
-                        onChange={(e) => saveGlobalSettings({ thinking_budget: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                      >
-                        <option value="2000">Light (2k tokens)</option>
-                        <option value="5000">Standard (5k tokens)</option>
-                        <option value="10000">Deep (10k tokens)</option>
-                        <option value="20000">Maximum (20k tokens)</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[12px] font-medium text-muted">Worker Failover Chain</label>
-                    <p className="text-[10px] text-muted/70">When LM Studio is unavailable, workers fall back to:</p>
-                    <select
-                      defaultValue={globalSettings.default_worker_provider || "claude-sonnet"}
-                      onChange={(e) => saveGlobalSettings({ default_worker_provider: e.target.value })}
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                    >
-                      <option value="claude-sonnet">Claude Sonnet 4.6</option>
-                      <option value="google">Google Gemini</option>
-                      <option value="openai">OpenAI GPT-4o</option>
-                    </select>
-                  </div>
-                </div>
+          <div className="flex flex-1 overflow-hidden">
+            {/* Settings Sidebar */}
+            <div className="w-[200px] shrink-0 border-r border-border bg-surface/30 overflow-y-auto py-4 px-2">
+              <div className="mb-1 px-3 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">Account</span>
               </div>
+              {[
+                { key: "profile" as const, label: "Profile" },
+              ].map(item => (
+                <button key={item.key} onClick={() => setSettingsTab(item.key)} className={`flex w-full items-center rounded-md px-3 py-1.5 text-[13px] transition-colors ${settingsTab === item.key ? "bg-accent/10 font-medium text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"}`}>{item.label}</button>
+              ))}
 
-              {/* ── API Keys ── */}
-              <div className="mt-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-yellow-500/10">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-yellow-500"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-                  </div>
+              <div className="mt-4 mb-1 px-3 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">AI & Models</span>
+              </div>
+              {[
+                { key: "brain" as const, label: "Brain" },
+                { key: "api-keys" as const, label: "API Keys" },
+                { key: "memory" as const, label: "Memory" },
+              ].map(item => (
+                <button key={item.key} onClick={() => setSettingsTab(item.key)} className={`flex w-full items-center rounded-md px-3 py-1.5 text-[13px] transition-colors ${settingsTab === item.key ? "bg-accent/10 font-medium text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"}`}>{item.label}</button>
+              ))}
+
+              <div className="mt-4 mb-1 px-3 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted/60">Integrations</span>
+              </div>
+              {[
+                { key: "connectors" as const, label: "Connected Apps" },
+              ].map(item => (
+                <button key={item.key} onClick={() => setSettingsTab(item.key)} className={`flex w-full items-center rounded-md px-3 py-1.5 text-[13px] transition-colors ${settingsTab === item.key ? "bg-accent/10 font-medium text-accent" : "text-foreground/70 hover:bg-hover-bg hover:text-foreground"}`}>{item.label}</button>
+              ))}
+            </div>
+
+            {/* Settings Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="mx-auto max-w-xl">
+
+                {/* Profile */}
+                {settingsTab === "profile" && (
                   <div>
-                    <h4 className="text-[14px] font-semibold text-foreground">API Keys</h4>
-                    <p className="text-[11px] text-muted">Provider credentials — stored locally, never shared</p>
-                  </div>
-                </div>
-                <div className="space-y-3 rounded-lg border border-border bg-surface/50 p-4">
-                  {[
-                    { key: "anthropic_api_key", label: "Anthropic", placeholder: "sk-ant-...", hint: "Claude Opus & Sonnet" },
-                    { key: "google_api_key", label: "Google AI", placeholder: "AIza...", hint: "Gemini models" },
-                    { key: "openai_api_key", label: "OpenAI", placeholder: "sk-...", hint: "GPT models, Whisper, TTS" },
-                  ].map((provider) => (
-                    <div key={provider.key} className="flex items-center gap-3">
-                      <div className="w-20 shrink-0">
-                        <p className="text-[12px] font-medium text-foreground">{provider.label}</p>
-                        <p className="text-[10px] text-muted">{provider.hint}</p>
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-[16px] font-semibold text-foreground">Profile</h3>
+                      <button onClick={() => saveGlobalSettings({})} className="rounded-lg bg-accent px-4 py-1.5 text-[12px] font-medium text-white hover:opacity-90">Save</button>
+                    </div>
+                    <div className="space-y-5">
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-pink-500 text-white text-[16px] font-semibold">AM</div>
+                        <button className="rounded-md border border-border px-3 py-1.5 text-[12px] text-muted hover:text-foreground hover:border-accent/30">Upload photo</button>
                       </div>
-                      <input
-                        type="password"
-                        defaultValue={globalSettings[provider.key] || ""}
-                        placeholder={provider.placeholder}
-                        onBlur={(e) => {
-                          const val = e.target.value.trim();
-                          if (val !== (globalSettings[provider.key] || "")) {
-                            saveGlobalSettings({ [provider.key]: val });
-                          }
-                        }}
-                        className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-[13px] text-foreground placeholder-muted outline-none focus:border-accent/50"
-                      />
-                      <span className={`h-2 w-2 rounded-full shrink-0 ${globalSettings[provider.key] ? "bg-green-500" : "bg-border"}`} title={globalSettings[provider.key] ? "Configured" : "Not set"} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* ── LM Studio / Local LLM ── */}
-              <div className="mt-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-indigo-400"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                  </div>
-                  <div>
-                    <h4 className="text-[14px] font-semibold text-foreground">LM Studio / Local LLM</h4>
-                    <p className="text-[11px] text-muted">Connect to LM Studio on this machine or a remote one</p>
-                  </div>
-                </div>
-                <div className="space-y-3 rounded-lg border border-border bg-surface/50 p-4">
-                  <div>
-                    <label className="text-[12px] font-medium text-muted">Server URL</label>
-                    <input
-                      type="text"
-                      defaultValue={globalSettings.lm_studio_url || ""}
-                      placeholder="http://192.168.1.100:1234/v1"
-                      onBlur={(e) => {
-                        const val = e.target.value.trim();
-                        if (val !== (globalSettings.lm_studio_url || "")) {
-                          saveGlobalSettings({ lm_studio_url: val });
-                        }
-                      }}
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground placeholder-muted outline-none focus:border-accent/50"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[12px] font-medium text-muted">Google Model</label>
-                      <select
-                        defaultValue={globalSettings.google_model || "gemini-2.0-flash"}
-                        onChange={(e) => saveGlobalSettings({ google_model: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                      >
-                        <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                        <option value="gemini-2.5-pro-preview-06-05">Gemini 2.5 Pro</option>
-                        <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[12px] font-medium text-muted">OpenAI Model</label>
-                      <select
-                        defaultValue={globalSettings.openai_model || "gpt-4o"}
-                        onChange={(e) => saveGlobalSettings({ openai_model: e.target.value })}
-                        className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                      >
-                        <option value="gpt-4o">GPT-4o</option>
-                        <option value="gpt-4o-mini">GPT-4o Mini</option>
-                        <option value="gpt-4.1">GPT-4.1</option>
-                        <option value="o3-mini">o3-mini</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Connectors ── */}
-              <div className="mt-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                  </div>
-                  <div>
-                    <h4 className="text-[14px] font-semibold text-foreground">Connectors</h4>
-                    <p className="text-[11px] text-muted">Connect external services and data sources</p>
-                  </div>
-                </div>
-                <div className="space-y-3 rounded-lg border border-border bg-surface/50 p-4">
-                  {/* Google connectors */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[13px] font-medium text-foreground">Drive search</p>
-                      <p className="text-[10px] text-muted">Search your Google Drive files</p>
-                    </div>
-                    <div className="flex h-5 w-9 cursor-pointer items-center rounded-full bg-border p-0.5 transition-colors" title="Coming soon">
-                      <div className="h-4 w-4 rounded-full bg-muted/60 transition-transform" />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500/10">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[13px] font-medium text-foreground">Gmail</p>
-                      <p className="text-[10px] text-muted">Read and send emails through Drew</p>
-                    </div>
-                    <button onClick={() => window.location.href = "/api/integrations/google/auth"} className="rounded-md border border-border px-3 py-1 text-[11px] text-muted hover:text-foreground hover:border-accent/30">
-                      Connect
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500/10">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-[13px] font-medium text-foreground">Google Calendar</p>
-                      <p className="text-[10px] text-muted">Sync events bi-directionally</p>
-                    </div>
-                    <button onClick={() => window.location.href = "/api/integrations/google/auth"} className="rounded-md border border-border px-3 py-1 text-[11px] text-muted hover:text-foreground hover:border-accent/30">
-                      Connect
-                    </button>
-                  </div>
-                </div>
-
-                {/* Other integrations */}
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {[
-                    { name: "Salesforce", icon: "CRM" },
-                    { name: "Temporal Cloud", icon: "WF" },
-                    { name: "VAPI Voice", icon: "VOX" },
-                    { name: "Recall.ai", icon: "REC" },
-                  ].map((integration) => (
-                    <div key={integration.name} className="flex items-center gap-3 rounded-lg border border-border bg-surface/50 p-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-background text-[10px] font-bold text-muted">
-                        {integration.icon}
+                      <div>
+                        <label className="text-[12px] font-medium text-muted">Name</label>
+                        <input type="text" defaultValue="Andrew McGuire" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50" />
                       </div>
-                      <div className="flex-1">
-                        <p className="text-[13px] font-medium text-foreground">{integration.name}</p>
-                        <p className="text-[10px] text-muted">Not connected</p>
+                      <div>
+                        <label className="text-[12px] font-medium text-muted">Email</label>
+                        <input type="email" defaultValue="andrew@steadybase.io" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50" readOnly />
                       </div>
-                      <button className="rounded-md border border-border px-2 py-1 text-[11px] text-muted hover:text-foreground hover:border-accent/30">
-                        Connect
-                      </button>
+                      <div>
+                        <label className="text-[12px] font-medium text-muted">Timezone</label>
+                        <select className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50">
+                          <option>Pacific Time (US &amp; Canada)</option>
+                          <option>Mountain Time (US &amp; Canada)</option>
+                          <option>Central Time (US &amp; Canada)</option>
+                          <option>Eastern Time (US &amp; Canada)</option>
+                          <option>UTC</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[12px] font-medium text-muted">Assistant Name</label>
+                        <input type="text" defaultValue="Drew" className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50" />
+                        <p className="mt-1 text-[10px] text-muted/60">This is what your AI assistant responds to.</p>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                )}
 
-              {/* ── Memory ── */}
-              <div className="mt-8 mb-8">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500/10">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-green-400"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
-                  </div>
+                {/* Brain */}
+                {settingsTab === "brain" && (
                   <div>
-                    <h4 className="text-[14px] font-semibold text-foreground">Memory & Context</h4>
-                    <p className="text-[11px] text-muted">How Drew retains context across sessions</p>
+                    <h3 className="text-[16px] font-semibold text-foreground mb-6">Brain Configuration</h3>
+                    <div className="space-y-5 rounded-xl border border-border bg-surface/50 p-5">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[12px] font-medium text-muted">Brain Model</label>
+                          <select defaultValue={globalSettings.brain_model || "claude-opus-4-6"} onChange={(e) => saveGlobalSettings({ brain_model: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50">
+                            <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                            <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[12px] font-medium text-muted">Thinking Budget</label>
+                          <select defaultValue={globalSettings.thinking_budget || "5000"} onChange={(e) => saveGlobalSettings({ thinking_budget: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50">
+                            <option value="2000">Light (2k tokens)</option>
+                            <option value="5000">Standard (5k tokens)</option>
+                            <option value="10000">Deep (10k tokens)</option>
+                            <option value="20000">Maximum (20k tokens)</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[12px] font-medium text-muted">Worker Failover Chain</label>
+                        <p className="text-[10px] text-muted/70 mb-1">When LM Studio is unavailable, workers fall back to:</p>
+                        <select defaultValue={globalSettings.default_worker_provider || "claude-sonnet"} onChange={(e) => saveGlobalSettings({ default_worker_provider: e.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50">
+                          <option value="claude-sonnet">Claude Sonnet 4.6</option>
+                          <option value="google">Google Gemini</option>
+                          <option value="openai">OpenAI GPT-4o</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[12px] font-medium text-muted">LM Studio Server</label>
+                        <input type="text" defaultValue={globalSettings.lm_studio_url || ""} placeholder="http://192.168.1.100:1234/v1" onBlur={(e) => { const v = e.target.value.trim(); if (v !== (globalSettings.lm_studio_url || "")) saveGlobalSettings({ lm_studio_url: v }); }} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground placeholder-muted outline-none focus:border-accent/50" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[12px] font-medium text-muted">Google Model</label>
+                          <select defaultValue={globalSettings.google_model || "gemini-2.0-flash"} onChange={(e) => saveGlobalSettings({ google_model: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50">
+                            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                            <option value="gemini-2.5-pro-preview-06-05">Gemini 2.5 Pro</option>
+                            <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[12px] font-medium text-muted">OpenAI Model</label>
+                          <select defaultValue={globalSettings.openai_model || "gpt-4o"} onChange={(e) => saveGlobalSettings({ openai_model: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50">
+                            <option value="gpt-4o">GPT-4o</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                            <option value="gpt-4.1">GPT-4.1</option>
+                            <option value="o3-mini">o3-mini</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="space-y-3 rounded-lg border border-border bg-surface/50 p-4">
+                )}
+
+                {/* API Keys */}
+                {settingsTab === "api-keys" && (
                   <div>
-                    <label className="text-[12px] font-medium text-muted">Memory Backend</label>
-                    <select
-                      defaultValue={globalSettings.memory_backend || "postgres"}
-                      onChange={(e) => saveGlobalSettings({ memory_backend: e.target.value })}
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                    >
-                      <option value="postgres">PostgreSQL (Local)</option>
-                      <option value="temporal">Temporal Cloud (Durable)</option>
-                    </select>
+                    <h3 className="text-[16px] font-semibold text-foreground mb-2">API Keys</h3>
+                    <p className="text-[12px] text-muted mb-6">Provider credentials — stored securely, never shared.</p>
+                    <div className="space-y-3">
+                      {[
+                        { key: "anthropic_api_key", label: "Anthropic", placeholder: "sk-ant-...", hint: "Claude Opus & Sonnet", color: "#d4a27a" },
+                        { key: "google_api_key", label: "Google AI", placeholder: "AIza...", hint: "Gemini models", color: "#4285f4" },
+                        { key: "openai_api_key", label: "OpenAI", placeholder: "sk-...", hint: "GPT, Whisper, TTS", color: "#74aa9c" },
+                      ].map((provider) => (
+                        <div key={provider.key} className="flex items-center gap-3 rounded-xl border border-border bg-surface/50 p-4">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-lg text-[11px] font-bold text-white shrink-0" style={{ backgroundColor: provider.color }}>{provider.label[0]}</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-[13px] font-medium text-foreground">{provider.label}</p>
+                              <span className={`h-2 w-2 rounded-full shrink-0 ${globalSettings[provider.key] ? "bg-green-500" : "bg-zinc-600"}`} />
+                            </div>
+                            <p className="text-[10px] text-muted">{provider.hint}</p>
+                          </div>
+                          <input
+                            type="password"
+                            defaultValue={globalSettings[provider.key] || ""}
+                            placeholder={provider.placeholder}
+                            onBlur={(e) => { const v = e.target.value.trim(); if (v !== (globalSettings[provider.key] || "")) saveGlobalSettings({ [provider.key]: v }); }}
+                            className="w-[220px] rounded-lg border border-border bg-background px-3 py-1.5 text-[12px] text-foreground placeholder-muted outline-none focus:border-accent/50"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
+                )}
+
+                {/* Connectors */}
+                {settingsTab === "connectors" && (
                   <div>
-                    <label className="text-[12px] font-medium text-muted">Context Window</label>
-                    <select
-                      defaultValue={globalSettings.context_messages || "20"}
-                      onChange={(e) => saveGlobalSettings({ context_messages: e.target.value })}
-                      className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50"
-                    >
-                      <option value="10">Last 10 messages</option>
-                      <option value="20">Last 20 messages</option>
-                      <option value="50">Last 50 messages</option>
-                      <option value="100">Last 100 messages</option>
-                    </select>
+                    <h3 className="text-[16px] font-semibold text-foreground mb-2">Connected Apps</h3>
+                    <p className="text-[12px] text-muted mb-6">Connect external services and data sources.</p>
+                    <div className="space-y-3">
+                      {/* Google Workspace */}
+                      <div className="rounded-xl border border-border bg-surface/50 p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
+                            <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[13px] font-medium text-foreground">Google Workspace</p>
+                            <p className="text-[11px] text-muted">Gmail, Calendar, Drive</p>
+                          </div>
+                          <button onClick={() => window.location.href = "/api/integrations/google/auth"} className="rounded-lg border border-border px-4 py-1.5 text-[12px] font-medium text-foreground hover:border-accent/30 hover:bg-hover-bg">Connect</button>
+                        </div>
+                        <div className="mt-3 grid grid-cols-3 gap-2 pl-[52px]">
+                          <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            <span className="text-[11px] text-muted">Gmail</span>
+                          </div>
+                          <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                            <span className="text-[11px] text-muted">Calendar</span>
+                          </div>
+                          <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <span className="text-[11px] text-muted">Drive</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Other integrations */}
+                      {[
+                        { name: "Slack", status: "Not connected", icon: "S", color: "#e01e5a" },
+                        { name: "GitHub", status: "Not connected", icon: "G", color: "#e4e4e7" },
+                        { name: "VAPI Voice", status: "Not connected", icon: "V", color: "#8b5cf6" },
+                        { name: "Recall.ai", status: "Not connected", icon: "R", color: "#3b82f6" },
+                        { name: "Temporal Cloud", status: "Not connected", icon: "T", color: "#10b981" },
+                      ].map((app) => (
+                        <div key={app.name} className="flex items-center gap-3 rounded-xl border border-border bg-surface/50 p-4">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg text-[12px] font-bold text-white shrink-0" style={{ backgroundColor: app.color }}>{app.icon}</div>
+                          <div className="flex-1">
+                            <p className="text-[13px] font-medium text-foreground">{app.name}</p>
+                            <p className="text-[11px] text-muted">{app.status}</p>
+                          </div>
+                          <button className="rounded-lg border border-border px-4 py-1.5 text-[12px] font-medium text-muted hover:text-foreground hover:border-accent/30">Connect</button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {/* Memory */}
+                {settingsTab === "memory" && (
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-foreground mb-2">Memory & Context</h3>
+                    <p className="text-[12px] text-muted mb-6">How Drew retains context across sessions.</p>
+                    <div className="space-y-4 rounded-xl border border-border bg-surface/50 p-5">
+                      <div>
+                        <label className="text-[12px] font-medium text-muted">Memory Backend</label>
+                        <select defaultValue={globalSettings.memory_backend || "postgres"} onChange={(e) => saveGlobalSettings({ memory_backend: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50">
+                          <option value="postgres">PostgreSQL (Local)</option>
+                          <option value="temporal">Temporal Cloud (Durable)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[12px] font-medium text-muted">Context Window</label>
+                        <select defaultValue={globalSettings.context_messages || "20"} onChange={(e) => saveGlobalSettings({ context_messages: e.target.value })} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-[13px] text-foreground outline-none focus:border-accent/50">
+                          <option value="10">Last 10 messages</option>
+                          <option value="20">Last 20 messages</option>
+                          <option value="50">Last 50 messages</option>
+                          <option value="100">Last 100 messages</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               </div>
 
               {settingsSaving && (
@@ -3314,44 +3245,38 @@ export default function Home() {
                   <p className="mt-1 text-[12px] text-muted/60">Click or drag and drop files here to upload.</p>
                 </div>
               ) : !dragOverFiles && (
-                <div className="mt-6 overflow-hidden rounded-xl border border-border">
-                  <table className="w-full text-left text-[13px]">
-                    <thead className="border-b border-border bg-surface">
-                      <tr>
-                        <th className="px-4 py-2.5 font-medium text-muted">Name</th>
-                        <th className="px-4 py-2.5 font-medium text-muted">Project</th>
-                        <th className="px-4 py-2.5 font-medium text-muted">Type</th>
-                        <th className="px-4 py-2.5 font-medium text-muted">Size</th>
-                        <th className="px-4 py-2.5 font-medium text-muted">By</th>
-                        <th className="px-4 py-2.5 font-medium text-muted">Uploaded</th>
-                        <th className="px-4 py-2.5 font-medium text-muted w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {projectFiles.map((file) => (
-                        <tr key={file.id} className="border-b border-border last:border-0 hover:bg-hover-bg transition-colors">
-                          <td className="px-4 py-2.5 text-foreground font-medium">
-                            <div className="flex items-center gap-2">
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted shrink-0">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                              </svg>
-                              {file.name}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2.5 text-muted">{file.project_name || file.channel_id}</td>
-                          <td className="px-4 py-2.5"><span className="rounded bg-surface px-1.5 py-0.5 text-[11px] text-muted">{file.file_type}</span></td>
-                          <td className="px-4 py-2.5 text-muted">{file.file_size > 1024 * 1024 ? `${(file.file_size / 1024 / 1024).toFixed(1)} MB` : file.file_size > 1024 ? `${(file.file_size / 1024).toFixed(0)} KB` : `${file.file_size} B`}</td>
-                          <td className="px-4 py-2.5 text-muted text-[12px]">{file.uploaded_by?.split("@")[0] || "-"}</td>
-                          <td className="px-4 py-2.5 text-muted text-[12px]">{new Date(file.created_at).toLocaleDateString()}</td>
-                          <td className="px-4 py-2.5">
-                            <button onClick={() => handleDeleteFile(file.id)} className="text-muted hover:text-red-400" title="Delete">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="mt-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {projectFiles.map((file) => {
+                    const ext = file.file_type?.toLowerCase() || "";
+                    const isImage = ["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext);
+                    const isVideo = ["mp4", "mov", "avi", "webm"].includes(ext);
+                    const isPdf = ext === "pdf";
+                    const iconColor = isImage ? "#3b82f6" : isVideo ? "#ef4444" : isPdf ? "#ef4444" : "#8b5cf6";
+                    return (
+                      <div key={file.id} className="group relative rounded-xl border border-border bg-surface/50 p-3 transition-all hover:border-accent/30 hover:bg-surface cursor-pointer">
+                        {/* File preview area */}
+                        <div className="mb-3 flex h-24 items-center justify-center rounded-lg bg-background/50">
+                          {isImage ? (
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                          ) : isVideo ? (
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          ) : (
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                          )}
+                        </div>
+                        {/* File info */}
+                        <p className="text-[13px] font-medium text-foreground truncate">{file.name}</p>
+                        <p className="mt-0.5 text-[11px] text-muted">
+                          {file.file_size > 1024 * 1024 ? `${(file.file_size / 1024 / 1024).toFixed(1)} MB` : file.file_size > 1024 ? `${(file.file_size / 1024).toFixed(0)} KB` : `${file.file_size} B`}
+                          {" · "}{new Date(file.created_at).toLocaleDateString()}
+                        </p>
+                        {/* Delete button */}
+                        <button onClick={(e) => { e.stopPropagation(); handleDeleteFile(file.id); }} className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-md bg-background/80 text-muted opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -3806,28 +3731,105 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── Chat View ── */}
+        {/* ── Chat View (Ask) ── */}
         {viewMode === "ask" && (
         <>
+        {/* Secondary sidebar - chat history (hidden on mobile) */}
+        <aside className="hidden md:flex w-[220px] shrink-0 flex-col border-r border-border bg-sidebar-bg">
+          <div className="px-3 py-3 border-b border-border/30">
+            <button onClick={() => { setMessages([]); setInput(""); }} className="flex items-center gap-1.5 text-[13px] text-muted hover:text-foreground/80 transition-colors">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>New chat</span>
+            </button>
+          </div>
+          <div className="px-2.5 py-2">
+            <div className="relative">
+              <svg className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" placeholder="Search chats..." className="w-full rounded-md border border-border/60 bg-background/50 py-1.5 pl-7 pr-2 text-[12px] text-foreground placeholder-muted/50 outline-none focus:border-accent/30" />
+            </div>
+          </div>
+          <div className="mx-2.5 border-t border-border/30" />
+          <div className="flex-1 overflow-y-auto px-2.5 py-2">
+            {/* Space threads grouped by project */}
+            {projects.filter(p => !p.is_dm).map((proj) => {
+              const colors = ["from-violet-500 to-purple-600", "from-blue-500 to-cyan-500", "from-emerald-500 to-green-500", "from-amber-500 to-orange-500"];
+              const colorIdx = proj.name.charCodeAt(0) % colors.length;
+              return (
+                <div key={proj.id} className="mb-3">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted/60 px-1 mb-1">{proj.name}</div>
+                  <button
+                    onClick={() => switchProject(proj.id)}
+                    className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-[12px] transition-colors ${
+                      activeProject === proj.id ? "bg-accent/10 text-foreground" : "text-muted hover:bg-hover-bg hover:text-foreground/80"
+                    }`}
+                  >
+                    <span className="flex-1 truncate text-left">Chat</span>
+                    {activeProject === proj.id && <span className="h-1.5 w-1.5 rounded-full bg-accent shrink-0" />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 && !typingAgent && (
             <div className="flex h-full items-center justify-center fade-up">
-              <div className="text-center px-4 max-w-lg">
-                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10 border border-accent/20">
-                  <span className="text-3xl font-bold gradient-text">D</span>
+              <div className="flex flex-col items-center px-6 w-full max-w-2xl">
+                <h1 className="text-2xl font-light text-foreground mb-10">
+                  {getGreeting()}, {session?.user?.name?.split(" ")[0] || "Andrew"}.
+                </h1>
+
+                {/* Large chat input */}
+                <div className="w-full mb-5">
+                  <div className="relative rounded-2xl border border-border/60 bg-surface/80 shadow-lg">
+                    <textarea
+                      ref={inputRef}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                      placeholder="What can I help with?"
+                      rows={3}
+                      className="w-full resize-none rounded-2xl bg-transparent px-6 py-5 pr-24 text-[16px] leading-[1.6] text-foreground placeholder-muted/50 outline-none"
+                    />
+                    <div className="absolute bottom-4 right-4 flex items-center gap-2">
+                      <button
+                        onMouseDown={recordingAudioNote ? undefined : startAudioNote}
+                        onMouseUp={recordingAudioNote ? stopAudioNote : undefined}
+                        onMouseLeave={() => recordingAudioNote && stopAudioNote()}
+                        className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors ${
+                          recordingAudioNote ? "bg-red-500 text-white" : "bg-surface text-muted hover:text-accent"
+                        }`}
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleSend()}
+                        disabled={sending || !input.trim()}
+                        className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-white transition-opacity hover:opacity-90 disabled:opacity-20"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <h2 className="text-2xl font-bold text-foreground">
-                  {getGreeting()}, {session?.user?.name?.split(" ")[0] || "there"}.
-                </h2>
-                <p className="mt-2 text-[15px] text-muted leading-relaxed">
-                  I&apos;m Drew, your AI assistant. Ask me anything about{" "}
-                  <span className="text-accent font-medium">{activeInfo.name}</span>{" "}
-                  or tell me what to work on.
-                </p>
-                <div className="mt-6 flex flex-wrap justify-center gap-2">
-                  {["What's on my calendar today?", "Summarize this project", "Help me draft an email"].map((q) => (
-                    <button key={q} onClick={() => handleSend(q)} className="rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px] text-foreground/70 transition-all hover:border-accent/30 hover:bg-surface-hover hover:text-foreground">
-                      {q}
+
+                {/* Context buttons */}
+                <div className="flex items-center gap-2 flex-wrap justify-center">
+                  {[
+                    { label: "Space", hasDropdown: true },
+                    { label: "Project", hasDropdown: true },
+                    { label: "@ Tag", hasDropdown: false },
+                    { label: "Docs", icon: true },
+                    { label: "Screen", icon: true },
+                  ].map((btn) => (
+                    <button key={btn.label} className="flex items-center gap-1.5 rounded-lg border border-border/40 px-3 py-2 text-[13px] text-muted transition-colors hover:bg-hover-bg hover:text-foreground/80">
+                      <span>{btn.label}</span>
+                      {btn.hasDropdown && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+                      )}
                     </button>
                   ))}
                 </div>
